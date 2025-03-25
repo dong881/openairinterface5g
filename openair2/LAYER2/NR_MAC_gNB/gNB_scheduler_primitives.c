@@ -3995,10 +3995,11 @@ int beam_selection_procedures(gNB_MAC_INST *mac, NR_UE_info_t *UE)
   return new_bf_index;
 }
 
-void send_initial_ul_rrc_message(int rnti, const uint8_t *sdu, sdu_size_t sdu_len, void *data)
+void send_initial_ul_rrc_message(int rnti, const uint8_t *sdu, sdu_size_t sdu_len)
 {
   gNB_MAC_INST *mac = RC.nrmac[0];
-  NR_UE_info_t *UE = (NR_UE_info_t *)data;
+  NR_UE_info_t *UE = find_ra_UE(&mac->UE_info, rnti);
+  AssertFatal(UE, "No UE corresponding to RNTI %x found\n", rnti);
   NR_SCHED_ENSURE_LOCKED(&mac->sched_lock);
 
   uint8_t du2cu[1024];
@@ -4024,10 +4025,7 @@ void send_initial_ul_rrc_message(int rnti, const uint8_t *sdu, sdu_size_t sdu_le
 bool prepare_initial_ul_rrc_message(gNB_MAC_INST *mac, NR_UE_info_t *UE)
 {
   NR_SCHED_ENSURE_LOCKED(&mac->sched_lock);
-
-  /* activate SRB0 */
-  if (!nr_rlc_activate_srb0(UE->rnti, UE, send_initial_ul_rrc_message))
-    return false;
+  nr_rlc_init_ue(UE->rnti, send_initial_ul_rrc_message);
 
   if (UE->uid >= MAX_MOBILES_PER_GNB) {
     // verifying if any UE left in the meantime and it is possible to get a valid UID
