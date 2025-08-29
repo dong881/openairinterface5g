@@ -1100,6 +1100,14 @@ __attribute__((__visibility__("default"))) void vrtsim_produce_samples(openair0_
   shm_td_iq_channel_produce_samples(vrtsim_state->channel, num_samples);
 }
 
+openair0_timestamp_t vrtsim_get_timestamp(openair0_device_t *device, struct timespec *ts)
+{
+  vrtsim_state_t *vrtsim_state = (vrtsim_state_t *)device->priv;
+  int64_t diff = (ts->tv_sec - vrtsim_state->start_ts.tv_sec) * 1000000000 + (ts->tv_nsec - vrtsim_state->start_ts.tv_nsec);
+  double diff_samples = vrtsim_state->sample_rate * vrtsim_state->timescale * diff / 1e9;
+  return diff_samples;
+}
+
 __attribute__((__visibility__("default"))) int device_init(openair0_device_t *device, openair0_config_t *openair0_cfg)
 {
   randominit();
@@ -1119,6 +1127,9 @@ __attribute__((__visibility__("default"))) int device_init(openair0_device_t *de
   device->trx_write_beams_func = vrtsim_write_beams;
   device->trx_set_beams = vrtsim_set_beams;
   device->trx_set_beams2 = vrtsim_set_beams2;
+  if (vrtsim_state->role == ROLE_SERVER) {
+    device->get_timestamp = vrtsim_get_timestamp;
+  }
 
   device->type = RFSIMULATOR;
   device->openair0_cfg = &openair0_cfg[0];
