@@ -536,6 +536,8 @@ add_library(f1ap
             ${F1AP_DIR}/f1ap_du_ue_context_management.c
             ${F1AP_DIR}/f1ap_encoder.c
             ${F1AP_DIR}/f1ap_handlers.c
+            ${F1AP_DIR}/f1ap_cu_positioning.c
+            ${F1AP_DIR}/f1ap_du_positioning.c
             ${F1AP_DIR}/f1ap_itti_messaging.c)
 target_include_directories(f1ap PUBLIC F1AP_DIR)
 target_link_libraries(f1ap PUBLIC asn1_f1ap GTPV1U)

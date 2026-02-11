@@ -14,6 +14,7 @@
 #include "f1ap_cu_task.h"
 #include "openair2/RRC/NR/nr_rrc_defs.h"
 #include <openair3/ocp-gtpu/gtp_itf.h>
+#include "f1ap_cu_positioning.h"
 
 static instance_t cu_task_create_gtpu_instance(eth_params_t *IPaddrs) {
   openAddr_t tmp= {0};
@@ -181,6 +182,10 @@ void *F1AP_CU_task(void *arg)
       case F1AP_UE_CONTEXT_MODIFICATION_REFUSE:
         CU_send_UE_CONTEXT_MODIFICATION_REFUSE(assoc_id,
                                                &F1AP_UE_CONTEXT_MODIFICATION_REFUSE(received_msg));
+        break;
+
+      case F1AP_TRP_INFORMATION_REQ:
+        CU_send_TRP_INFORMATION_REQUEST(assoc_id, &F1AP_TRP_INFORMATION_REQ(received_msg));
         break;
 
       case TERMINATE_MESSAGE:
