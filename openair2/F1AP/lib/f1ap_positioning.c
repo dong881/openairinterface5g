@@ -4629,7 +4629,7 @@ bool decode_trp_information_req(const F1AP_F1AP_PDU_t *pdu, f1ap_trp_information
   F1AP_TRPInformationRequestIEs_t *ie;
 
   F1AP_LIB_FIND_IE(F1AP_TRPInformationRequestIEs_t, ie, &in->protocolIEs.list, F1AP_ProtocolIE_ID_id_TransactionID, true);
-  F1AP_LIB_FIND_IE(F1AP_TRPInformationRequestIEs_t, ie, &in->protocolIEs.list, F1AP_ProtocolIE_ID_id_TRPList, true);
+  F1AP_LIB_FIND_IE(F1AP_TRPInformationRequestIEs_t, ie, &in->protocolIEs.list, F1AP_ProtocolIE_ID_id_TRPList, false);
   F1AP_LIB_FIND_IE(F1AP_TRPInformationRequestIEs_t,
                    ie,
                    &in->protocolIEs.list,
