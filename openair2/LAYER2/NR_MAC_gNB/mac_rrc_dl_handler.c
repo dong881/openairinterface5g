@@ -1168,3 +1168,18 @@ void trp_information_request(const f1ap_trp_information_req_t *req)
   mac->mac_rrc.trp_information_response(&resp);
   free_trp_information_resp(&resp);
 }
+
+void positioning_information_request(const f1ap_positioning_information_req_t *req)
+{
+  f1ap_positioning_information_resp_t resp = {.gNB_CU_ue_id = req->gNB_CU_ue_id, .gNB_DU_ue_id = req->gNB_DU_ue_id};
+  gNB_MAC_INST *mac = RC.nrmac[0];
+  NR_UE_info_t *UE = find_nr_UE(&mac->UE_info, req->gNB_DU_ue_id);
+  NR_UE_UL_BWP_t *current_UL_BWP = &UE->current_UL_BWP;
+  NR_ServingCellConfigCommon_t *scc = mac->common_channels[0].ServingCellConfigCommon;
+  if (current_UL_BWP->srs_Config) {
+    resp.srs_configuration = calloc_or_fail(1, sizeof(*resp.srs_configuration));
+    *resp.srs_configuration = cp_rrc_to_f1ap_srs_configuration(current_UL_BWP, scc);
+  }
+  mac->mac_rrc.positioning_information_response(&resp);
+  free_positioning_information_resp(&resp);
+}

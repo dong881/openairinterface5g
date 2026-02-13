@@ -7,6 +7,9 @@
 #include "openair2/COMMON/f1ap_messages_types.h"
 #include "rrc_gNB_du.h"
 #include "openair2/F1AP/lib/f1ap_positioning.h"
+#include "openair3/NRPPA/nrppa_gNB_ue_context.h"
+#include "openair2/RRC/NR/rrc_gNB_UE_context.h"
+#include "openair2/F1AP/f1ap_ids.h"
 
 static nrppa_trp_reference_point_type_t f1ap2nrppa_reference_point_type(const f1ap_trp_reference_point_type_t *in)
 {
@@ -201,6 +204,282 @@ static nrppa_trp_information_type_response_item_t f1ap2nrppa_trp_info_type_respo
   return out;
 }
 
+static nrppa_subcarrier_spacing_pr f1ap2nrppa_subcarrier_spacing(const f1ap_subcarrier_spacing_pr scs)
+{
+  switch (scs) {
+    case F1AP_SUBCARRIER_SPACING_15KHZ:
+      return NRPPA_SUBCARRIER_SPACING_15KHZ;
+    case F1AP_SUBCARRIER_SPACING_30KHZ:
+      return NRPPA_SUBCARRIER_SPACING_30KHZ;
+    case F1AP_SUBCARRIER_SPACING_60KHZ:
+      return NRPPA_SUBCARRIER_SPACING_60KHZ;
+    case F1AP_SUBCARRIER_SPACING_120KHZ:
+      return NRPPA_SUBCARRIER_SPACING_120KHZ;
+    default:
+      AssertFatal(false, "Illegal Subcarrier Spacing\n");
+      break;
+  }
+}
+
+static nrppa_srs_configuration_t cp_f1ap_to_nrppa_srs_configuration(f1ap_srs_configuration_t *in)
+{
+  nrppa_srs_configuration_t srs_configuration = {0};
+  nrppa_srs_carrier_list_t *srs_carrier_list = &srs_configuration.srs_carrier_list;
+
+  f1ap_srs_carrier_list_t *f1_srs_carrier_list = &in->srs_carrier_list;
+
+  uint32_t srs_carrier_list_length = f1_srs_carrier_list->srs_carrier_list_length;
+  srs_carrier_list->srs_carrier_list_length = srs_carrier_list_length;
+
+  if (srs_carrier_list_length > 0) {
+    srs_carrier_list->srs_carrier_list_item =
+        calloc_or_fail(srs_carrier_list_length, sizeof(*srs_carrier_list->srs_carrier_list_item));
+  }
+
+  for (int l = 0; l < srs_carrier_list_length; l++) {
+    nrppa_srs_carrier_list_item_t *item = &srs_carrier_list->srs_carrier_list_item[l];
+    f1ap_srs_carrier_list_item_t *f1_item = &f1_srs_carrier_list->srs_carrier_list_item[l];
+
+    // pointA
+    item->pointA = f1_item->pointA;
+
+    // Uplink Channel BW-PerSCS-List
+    nrppa_uplink_channel_bw_per_scs_list_t *ul_bw_list = &item->uplink_channel_bw_per_scs_list;
+    f1ap_uplink_channel_bw_per_scs_list_t *f1_ul_bw_list = &f1_item->uplink_channel_bw_per_scs_list;
+
+    uint32_t scs_specific_carrier_list_length = f1_ul_bw_list->scs_specific_carrier_list_length;
+    ul_bw_list->scs_specific_carrier_list_length = scs_specific_carrier_list_length;
+
+    if (scs_specific_carrier_list_length > 0) {
+      ul_bw_list->scs_specific_carrier =
+          calloc_or_fail(ul_bw_list->scs_specific_carrier_list_length, sizeof(*ul_bw_list->scs_specific_carrier));
+    }
+
+    for (int i = 0; i < scs_specific_carrier_list_length; i++) {
+      nrppa_scs_specific_carrier_t *nrppa_scs = &ul_bw_list->scs_specific_carrier[i];
+      f1ap_scs_specific_carrier_t *f1_scs = &f1_ul_bw_list->scs_specific_carrier[i];
+
+      // offset to carrier
+      nrppa_scs->offset_to_carrier = f1_scs->offset_to_carrier;
+
+      // subcarrier spacing
+      nrppa_scs->subcarrier_spacing = f1ap2nrppa_subcarrier_spacing(f1_scs->subcarrier_spacing);
+
+      // carrier bandwidth
+      nrppa_scs->carrier_bandwidth = f1_scs->carrier_bandwidth;
+    }
+
+    // Active UL BWP
+    nrppa_active_ul_bwp_t *active_ul_bwp = &item->active_ul_bwp;
+    f1ap_active_ul_bwp_t *f1_active_ul_bwp = &f1_item->active_ul_bwp;
+
+    // location and bandwidth
+    active_ul_bwp->location_and_bandwidth = f1_active_ul_bwp->location_and_bandwidth;
+
+    // subcarrier spacing
+    active_ul_bwp->subcarrier_spacing = f1ap2nrppa_subcarrier_spacing(f1_active_ul_bwp->subcarrier_spacing);
+
+    if (f1_active_ul_bwp->cyclic_prefix) {
+      active_ul_bwp->cyclic_prefix = NRPPA_CP_TYPE_EXTENDED;
+    } else {
+      active_ul_bwp->cyclic_prefix = NRPPA_CP_TYPE_NORMAL;
+    }
+
+    active_ul_bwp->tx_direct_current_location = f1_active_ul_bwp->tx_direct_current_location;
+
+    nrppa_srs_config_t *srs_config = &active_ul_bwp->srs_config;
+    f1ap_srs_config_t *f1_srs_config = &f1_active_ul_bwp->srs_config;
+
+    // optional: srs_resource_list
+    if (f1_srs_config->srs_resource_list) {
+      f1ap_srs_resource_list_t *f1_srs_resource_list = f1_srs_config->srs_resource_list;
+
+      srs_config->srs_resource_list = calloc_or_fail(1, sizeof(*srs_config->srs_resource_list));
+
+      nrppa_srs_resource_list_t *srs_resource_list = srs_config->srs_resource_list;
+      uint32_t srs_resource_list_length = f1_srs_resource_list->srs_resource_list_length;
+
+      srs_resource_list->srs_resource_list_length = srs_resource_list_length;
+      srs_resource_list->srs_resource = calloc_or_fail(srs_resource_list_length, sizeof(*srs_resource_list->srs_resource));
+
+      for (int i = 0; i < srs_resource_list_length; i++) {
+        nrppa_srs_resource_t *srs_resource = &srs_resource_list->srs_resource[i];
+        f1ap_srs_resource_t *f1_srs_resource = &f1_srs_resource_list->srs_resource[i];
+
+        srs_resource->srs_resource_id = f1_srs_resource->srs_resource_id;
+        switch (f1_srs_resource->nr_of_srs_ports) {
+          case F1AP_SRS_NUMBER_OF_PORTS_N1:
+            srs_resource->nr_of_srs_ports = NRPPA_SRS_NUMBER_OF_PORTS_N1;
+            break;
+          case F1AP_SRS_NUMBER_OF_PORTS_N2:
+            srs_resource->nr_of_srs_ports = NRPPA_SRS_NUMBER_OF_PORTS_N2;
+            break;
+          case F1AP_SRS_NUMBER_OF_PORTS_N4:
+            srs_resource->nr_of_srs_ports = NRPPA_SRS_NUMBER_OF_PORTS_N4;
+            break;
+          default:
+            AssertFatal(false, "Illegal number of ports %d\n", f1_srs_resource->nr_of_srs_ports);
+            break;
+        }
+
+        f1ap_transmission_comb_t *f1_srs_tx_comb = &f1_srs_resource->transmission_comb;
+        nrppa_transmission_comb_t *srs_tx_comb = &srs_resource->transmission_comb;
+
+        switch (f1_srs_tx_comb->present) {
+          case F1AP_TRANSMISSION_COMB_PR_NOTHING:
+            srs_tx_comb->present = NRPPA_TRANSMISSION_COMB_PR_NOTHING;
+            break;
+          case F1AP_TRANSMISSION_COMB_PR_N2:
+            srs_tx_comb->present = NRPPA_TRANSMISSION_COMB_PR_N2;
+            srs_tx_comb->choice.n2.comb_offset_n2 = f1_srs_tx_comb->choice.n2.comb_offset_n2;
+            srs_tx_comb->choice.n2.cyclic_shift_n2 = f1_srs_tx_comb->choice.n2.cyclic_shift_n2;
+            break;
+          case F1AP_TRANSMISSION_COMB_PR_N4:
+            srs_tx_comb->present = NRPPA_TRANSMISSION_COMB_PR_N4;
+            srs_tx_comb->choice.n4.comb_offset_n4 = f1_srs_tx_comb->choice.n4.comb_offset_n4;
+            srs_tx_comb->choice.n4.cyclic_shift_n4 = f1_srs_tx_comb->choice.n4.cyclic_shift_n4;
+            break;
+          default:
+            AssertFatal(false, "illegal transmissionComb %d\n", f1_srs_tx_comb->present);
+            break;
+        }
+
+        srs_resource->start_position = f1_srs_resource->start_position;
+        switch (f1_srs_resource->nr_of_symbols) {
+          case F1AP_SRS_NUMBER_OF_SYMBOLS_N1:
+            srs_resource->nr_of_symbols = NRPPA_SRS_NUMBER_OF_SYMBOLS_N1;
+            break;
+          case F1AP_SRS_NUMBER_OF_SYMBOLS_N2:
+            srs_resource->nr_of_symbols = NRPPA_SRS_NUMBER_OF_SYMBOLS_N2;
+            break;
+          case F1AP_SRS_NUMBER_OF_SYMBOLS_N4:
+            srs_resource->nr_of_symbols = NRPPA_SRS_NUMBER_OF_SYMBOLS_N4;
+            break;
+          default:
+            AssertFatal(false, "illegal number of symbols %d\n", f1_srs_resource->nr_of_symbols);
+            break;
+        }
+        switch (f1_srs_resource->repetition_factor) {
+          case F1AP_SRS_REPETITION_FACTOR_RF1:
+            srs_resource->repetition_factor = NRPPA_SRS_REPETITION_FACTOR_RF1;
+            break;
+          case F1AP_SRS_REPETITION_FACTOR_RF2:
+            srs_resource->repetition_factor = NRPPA_SRS_REPETITION_FACTOR_RF2;
+            break;
+          case F1AP_SRS_REPETITION_FACTOR_RF4:
+            srs_resource->repetition_factor = NRPPA_SRS_REPETITION_FACTOR_RF4;
+            break;
+          default:
+            AssertFatal(false, "illegal repetition factor %d\n", f1_srs_resource->repetition_factor);
+            break;
+        }
+        srs_resource->freq_domain_position = f1_srs_resource->freq_domain_position;
+        srs_resource->freq_domain_shift = f1_srs_resource->freq_domain_shift;
+        srs_resource->c_srs = f1_srs_resource->c_srs;
+        srs_resource->b_srs = f1_srs_resource->b_srs;
+        srs_resource->b_hop = f1_srs_resource->b_hop;
+        switch (f1_srs_resource->group_or_sequence_hopping) {
+          case F1AP_GROUPORSEQUENCEHOPPING_NOTHING:
+            srs_resource->group_or_sequence_hopping = NRPPA_GROUPORSEQUENCEHOPPING_NOTHING;
+            break;
+          case F1AP_GROUPORSEQUENCEHOPPING_GROUPHOPPING:
+            srs_resource->group_or_sequence_hopping = NRPPA_GROUPORSEQUENCEHOPPING_GROUPHOPPING;
+            break;
+          case F1AP_GROUPORSEQUENCEHOPPING_SEQUENCEHOPPING:
+            srs_resource->group_or_sequence_hopping = NRPPA_GROUPORSEQUENCEHOPPING_SEQUENCEHOPPING;
+            break;
+          default:
+            AssertFatal(false, "illegal group or sequence hopping %d\n", f1_srs_resource->group_or_sequence_hopping);
+            break;
+        }
+
+        f1ap_resource_type_t *f1_res_type = &f1_srs_resource->resource_type;
+        nrppa_resource_type_t *res_type = &srs_resource->resource_type;
+        switch (f1_srs_resource->resource_type.present) {
+          case F1AP_RESOURCE_TYPE_PR_NOTHING:
+            res_type->present = NRPPA_RESOURCE_TYPE_PR_NOTHING;
+            break;
+          case F1AP_RESOURCE_TYPE_PR_PERIODIC:
+            res_type->present = NRPPA_RESOURCE_TYPE_PR_PERIODIC;
+            res_type->choice.periodic.periodicity =
+                (nrppa_srs_resource_type_periodicity_pr)f1_res_type->choice.periodic.periodicity;
+            res_type->choice.periodic.offset = f1_res_type->choice.periodic.offset;
+          case F1AP_RESOURCE_TYPE_PR_SEMI_PERSISTENT:
+            res_type->present = NRPPA_RESOURCE_TYPE_PR_SEMI_PERSISTENT;
+            res_type->choice.semi_persistent.periodicity =
+                (nrppa_srs_resource_type_periodicity_pr)f1_res_type->choice.semi_persistent.periodicity;
+            res_type->choice.semi_persistent.offset = f1_res_type->choice.semi_persistent.offset;
+            break;
+          case F1AP_RESOURCE_TYPE_PR_APERIODIC:
+            res_type->present = NRPPA_RESOURCE_TYPE_PR_APERIODIC;
+            res_type->choice.aperiodic = f1_res_type->choice.aperiodic;
+            break;
+          default:
+            AssertFatal(false, "illegal resourceType %d\n", f1_res_type->present);
+            break;
+        }
+        srs_resource->sequence_id = f1_srs_resource->sequence_id;
+      }
+    }
+
+    // optional: srs_resource_set_list
+    if (f1_srs_config->srs_resource_set_list) {
+      f1ap_srs_resource_set_list_t *f1_srs_resource_set_list = f1_srs_config->srs_resource_set_list;
+
+      srs_config->srs_resource_set_list = calloc_or_fail(1, sizeof(*srs_config->srs_resource_set_list));
+
+      nrppa_srs_resource_set_list_t *srs_resource_set_list = srs_config->srs_resource_set_list;
+      uint32_t srs_resource_set_list_length = f1_srs_resource_set_list->srs_resource_set_list_length;
+
+      srs_resource_set_list->srs_resource_set_list_length = srs_resource_set_list_length;
+      srs_resource_set_list->srs_resource_set =
+          calloc_or_fail(srs_resource_set_list_length, sizeof(*srs_resource_set_list->srs_resource_set));
+
+      for (int i = 0; i < srs_resource_set_list_length; i++) {
+        nrppa_srs_resource_set_t *srs_resource_set = &srs_resource_set_list->srs_resource_set[i];
+        f1ap_srs_resource_set_t *f1_srs_resource_set = &f1_srs_resource_set_list->srs_resource_set[i];
+
+        srs_resource_set->srs_resource_set_id = f1_srs_resource_set->srs_resource_set_id;
+
+        uint8_t srs_resource_id_list_length = f1_srs_resource_set->srs_resource_id_list.srs_resource_id_list_length;
+        srs_resource_set->srs_resource_id_list.srs_resource_id_list_length = srs_resource_id_list_length;
+        srs_resource_set->srs_resource_id_list.srs_resource_id =
+            calloc_or_fail(srs_resource_id_list_length, sizeof(*srs_resource_set->srs_resource_id_list.srs_resource_id));
+
+        for (int j = 0; j < srs_resource_id_list_length; j++) {
+          srs_resource_set->srs_resource_id_list.srs_resource_id[j] = f1_srs_resource_set->srs_resource_id_list.srs_resource_id[j];
+        }
+
+        f1ap_resource_set_type_t *f1_res_set_type = &f1_srs_resource_set->resource_set_type;
+        nrppa_resource_set_type_t *res_set_type = &srs_resource_set->resource_set_type;
+        switch (f1_res_set_type->present) {
+          case F1AP_RESOURCE_SET_TYPE_PR_NOTHING:
+            res_set_type->present = NRPPA_RESOURCE_SET_TYPE_PR_NOTHING;
+            break;
+          case F1AP_RESOURCE_SET_TYPE_PR_PERIODIC:
+            res_set_type->present = NRPPA_RESOURCE_SET_TYPE_PR_PERIODIC;
+            res_set_type->choice.periodic = f1_res_set_type->choice.periodic;
+            break;
+          case F1AP_RESOURCE_SET_TYPE_PR_SEMI_PERSISTENT:
+            res_set_type->present = NRPPA_RESOURCE_SET_TYPE_PR_SEMI_PERSISTENT;
+            res_set_type->choice.semi_persistent = f1_res_set_type->choice.semi_persistent;
+            break;
+          case F1AP_RESOURCE_SET_TYPE_PR_APERIODIC:
+            res_set_type->present = NRPPA_RESOURCE_SET_TYPE_PR_APERIODIC;
+            res_set_type->choice.aperiodic.srs_resource_trigger = f1_res_set_type->choice.aperiodic.srs_resource_trigger;
+            res_set_type->choice.aperiodic.slot_offset = f1_res_set_type->choice.aperiodic.slot_offset;
+            break;
+          default:
+            AssertFatal(false, "illegal resource set type %d\n", f1_res_set_type->present);
+            break;
+        }
+      }
+    }
+  }
+
+  return srs_configuration;
+}
+
 int rrc_gNB_process_trp_information_request(gNB_RRC_INST *rrc, const nrppa_trp_information_req_t *msg)
 {
   f1ap_trp_information_req_t f1ap_msg = {0};
@@ -315,4 +594,35 @@ int rrc_CU_process_trp_information_response(f1ap_trp_information_resp_t *f1ap_ms
   itti_send_msg_to_task(TASK_NRPPA, 0, msg_resp);
 
   return 0;
+}
+
+void rrc_gNB_process_positioning_information_request(gNB_RRC_INST *rrc, const nrppa_positioning_information_req_t *msg)
+{
+  f1ap_positioning_information_req_t f1ap_msg = {0};
+  nrppa_gNB_ue_context_t *nrppa_ue_context = nrppa_get_ue_context(msg->transaction_id);
+  rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, nrppa_ue_context->gNB_ue_ngap_id);
+  if (!ue_context_p) {
+    LOG_E(RRC, "could not find UE context for CU UE ID %u, aborting transaction\n", nrppa_ue_context->gNB_ue_ngap_id);
+    return;
+  }
+  gNB_RRC_UE_t *UE = &ue_context_p->ue_context;
+  f1_ue_data_t ue_data = cu_get_f1_ue_data(UE->rrc_ue_id);
+  RETURN_IF_INVALID_ASSOC_ID(ue_data.du_assoc_id);
+  f1ap_msg.gNB_CU_ue_id = UE->rrc_ue_id;
+  f1ap_msg.gNB_DU_ue_id = ue_data.secondary_ue;
+  rrc->mac_rrc.positioning_information_request(ue_data.du_assoc_id, &f1ap_msg);
+}
+
+void rrc_CU_process_positioning_information_response(f1ap_positioning_information_resp_t *f1ap_msg)
+{
+  MessageDef *msg_resp = itti_alloc_new_message(TASK_RRC_GNB, 0, NRPPA_POSITIONING_INFORMATION_RESP);
+  nrppa_positioning_information_resp_t *nrppa_msg = &NRPPA_POSITIONING_INFORMATION_RESP(msg_resp);
+  nrppa_gNB_ue_context_t *nrppa_ue_context = nrppa_get_context_by_ue_id(f1ap_msg->gNB_CU_ue_id);
+  nrppa_msg->transaction_id = nrppa_ue_context->transaction_id;
+  if (f1ap_msg->srs_configuration) {
+    nrppa_msg->srs_configuration = calloc_or_fail(1, sizeof(*nrppa_msg->srs_configuration));
+    *nrppa_msg->srs_configuration = cp_f1ap_to_nrppa_srs_configuration(f1ap_msg->srs_configuration);
+  }
+  LOG_I(NR_RRC, "Sending NRPPA_POSITIONING_INFORMATION_RESP to TASK_NRPPA\n");
+  itti_send_msg_to_task(TASK_NRPPA, 0, msg_resp);
 }

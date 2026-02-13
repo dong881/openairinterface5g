@@ -4533,3 +4533,423 @@ void create_trp_info_item(const f1ap_trp_information_req_t *req,
     }
   }
 }
+
+f1ap_srs_configuration_t cp_rrc_to_f1ap_srs_configuration(NR_UE_UL_BWP_t *current_UL_BWP, NR_ServingCellConfigCommon_t *scc)
+{
+  f1ap_srs_configuration_t srs_configuration = {0};
+  f1ap_srs_carrier_list_t *srs_carrier_list = &srs_configuration.srs_carrier_list;
+
+  srs_carrier_list->srs_carrier_list_length = 1;
+  srs_carrier_list->srs_carrier_list_item = calloc_or_fail(1, sizeof(*srs_carrier_list->srs_carrier_list_item));
+
+  f1ap_srs_carrier_list_item_t *item = &srs_carrier_list->srs_carrier_list_item[0];
+
+  // pointA
+  if (scc->uplinkConfigCommon && scc->uplinkConfigCommon->frequencyInfoUL
+      && scc->uplinkConfigCommon->frequencyInfoUL->absoluteFrequencyPointA) {
+    item->pointA = *scc->uplinkConfigCommon->frequencyInfoUL->absoluteFrequencyPointA;
+  } else if (scc->downlinkConfigCommon && scc->downlinkConfigCommon->frequencyInfoDL
+             && scc->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencyPointA) {
+    item->pointA = scc->downlinkConfigCommon->frequencyInfoDL->absoluteFrequencyPointA;
+  } else {
+    AssertFatal(false, "Neither UL nor DL configuration contains Point A");
+  }
+
+  // Uplink Channel BW-PerSCS-List
+  struct NR_FrequencyInfoUL__scs_SpecificCarrierList *scs_list = &scc->uplinkConfigCommon->frequencyInfoUL->scs_SpecificCarrierList;
+
+  f1ap_uplink_channel_bw_per_scs_list_t *ul_bw_list = &item->uplink_channel_bw_per_scs_list;
+  ul_bw_list->scs_specific_carrier_list_length = scs_list->list.count;
+  ul_bw_list->scs_specific_carrier =
+      calloc_or_fail(ul_bw_list->scs_specific_carrier_list_length, sizeof(*ul_bw_list->scs_specific_carrier));
+
+  for (int i = 0; i < ul_bw_list->scs_specific_carrier_list_length; i++) {
+    f1ap_scs_specific_carrier_t *f1_scs = &ul_bw_list->scs_specific_carrier[i];
+    NR_SCS_SpecificCarrier_t *rrc_scs = scs_list->list.array[i];
+
+    // offset to carrier
+    f1_scs->offset_to_carrier = rrc_scs->offsetToCarrier;
+
+    // subcarrier spacing
+    switch (rrc_scs->subcarrierSpacing) {
+      case NR_SubcarrierSpacing_kHz15:
+        f1_scs->subcarrier_spacing = F1AP_SUBCARRIER_SPACING_15KHZ;
+        break;
+      case NR_SubcarrierSpacing_kHz30:
+        f1_scs->subcarrier_spacing = F1AP_SUBCARRIER_SPACING_30KHZ;
+        break;
+      case NR_SubcarrierSpacing_kHz60:
+        f1_scs->subcarrier_spacing = F1AP_SUBCARRIER_SPACING_60KHZ;
+        break;
+      case NR_SubcarrierSpacing_kHz120:
+        f1_scs->subcarrier_spacing = F1AP_SUBCARRIER_SPACING_120KHZ;
+        break;
+        AssertFatal(false, "Illegal Subcarrier Spacing\n");
+      default:
+        break;
+    }
+
+    // carrier bandwidth
+    f1_scs->carrier_bandwidth = rrc_scs->carrierBandwidth;
+  }
+
+  // Active UL BWP
+  f1ap_active_ul_bwp_t *active_ul_bwp = &item->active_ul_bwp;
+
+  // location and bandwidth
+  active_ul_bwp->location_and_bandwidth = PRBalloc_to_locationandbandwidth(current_UL_BWP->BWPSize, current_UL_BWP->BWPStart);
+
+  // subcarrier spacing
+  switch (current_UL_BWP->scs) {
+    case NR_SubcarrierSpacing_kHz15:
+      active_ul_bwp->subcarrier_spacing = F1AP_SUBCARRIER_SPACING_15KHZ;
+      break;
+    case NR_SubcarrierSpacing_kHz30:
+      active_ul_bwp->subcarrier_spacing = F1AP_SUBCARRIER_SPACING_30KHZ;
+      break;
+    case NR_SubcarrierSpacing_kHz60:
+      active_ul_bwp->subcarrier_spacing = F1AP_SUBCARRIER_SPACING_60KHZ;
+      break;
+    case NR_SubcarrierSpacing_kHz120:
+      active_ul_bwp->subcarrier_spacing = F1AP_SUBCARRIER_SPACING_120KHZ;
+      break;
+      AssertFatal(false, "Illegal Subcarrier Spacing\n");
+    default:
+      break;
+  }
+
+  if (current_UL_BWP->cyclicprefix) {
+    active_ul_bwp->cyclic_prefix = F1AP_CP_TYPE_EXTENDED;
+  } else {
+    active_ul_bwp->cyclic_prefix = F1AP_CP_TYPE_NORMAL;
+  }
+
+  active_ul_bwp->tx_direct_current_location = 0;
+
+  NR_SRS_Config_t *rrc_srs_config = current_UL_BWP->srs_Config;
+  f1ap_srs_config_t *f1_srs_config = &active_ul_bwp->srs_config;
+
+  // SRS Resource List
+  if (rrc_srs_config->srs_ResourceToAddModList) {
+    f1_srs_config->srs_resource_list = calloc_or_fail(1, sizeof(*f1_srs_config->srs_resource_list));
+    f1ap_srs_resource_list_t *srs_resource_list = f1_srs_config->srs_resource_list;
+    uint32_t srs_resource_list_length = rrc_srs_config->srs_ResourceToAddModList->list.count;
+    srs_resource_list->srs_resource_list_length = srs_resource_list_length;
+    srs_resource_list->srs_resource = calloc_or_fail(srs_resource_list_length, sizeof(*srs_resource_list->srs_resource));
+
+    for (int i = 0; i < srs_resource_list_length; i++) {
+      NR_SRS_Resource_t *rrc_res = rrc_srs_config->srs_ResourceToAddModList->list.array[i];
+      f1ap_srs_resource_t *srs_resource = &srs_resource_list->srs_resource[i];
+      srs_resource->srs_resource_id = rrc_res->srs_ResourceId;
+
+      switch (rrc_res->nrofSRS_Ports) {
+        case NR_SRS_Resource__nrofSRS_Ports_port1:
+          srs_resource->nr_of_srs_ports = F1AP_SRS_NUMBER_OF_PORTS_N1;
+          break;
+        case NR_SRS_Resource__nrofSRS_Ports_ports2:
+          srs_resource->nr_of_srs_ports = F1AP_SRS_NUMBER_OF_PORTS_N2;
+          break;
+        case NR_SRS_Resource__nrofSRS_Ports_ports4:
+          srs_resource->nr_of_srs_ports = F1AP_SRS_NUMBER_OF_PORTS_N4;
+          break;
+        default:
+          AssertFatal(false, "Illegal number of ports\n");
+          break;
+      }
+
+      struct NR_SRS_Resource__transmissionComb *rrc_tx_comb = &rrc_res->transmissionComb;
+      f1ap_transmission_comb_t *tx_comb = &srs_resource->transmission_comb;
+      switch (rrc_res->transmissionComb.present) {
+        case NR_SRS_Resource__transmissionComb_PR_n2:
+          tx_comb->present = F1AP_TRANSMISSION_COMB_PR_N2;
+          tx_comb->choice.n2.comb_offset_n2 = rrc_tx_comb->choice.n2->combOffset_n2;
+          tx_comb->choice.n2.cyclic_shift_n2 = rrc_tx_comb->choice.n2->cyclicShift_n2;
+          break;
+        case NR_SRS_Resource__transmissionComb_PR_n4:
+          tx_comb->present = F1AP_TRANSMISSION_COMB_PR_N4;
+          tx_comb->choice.n4.comb_offset_n4 = rrc_tx_comb->choice.n4->combOffset_n4;
+          tx_comb->choice.n4.cyclic_shift_n4 = rrc_tx_comb->choice.n4->cyclicShift_n4;
+          break;
+        default:
+          AssertFatal(false, "Illegal comb size\n");
+          break;
+      }
+
+      srs_resource->start_position = rrc_res->resourceMapping.startPosition;
+
+      switch (rrc_res->resourceMapping.nrofSymbols) {
+        case NR_SRS_Resource__resourceMapping__nrofSymbols_n1:
+          srs_resource->nr_of_symbols = F1AP_SRS_NUMBER_OF_SYMBOLS_N1;
+          break;
+        case NR_SRS_Resource__resourceMapping__nrofSymbols_n2:
+          srs_resource->nr_of_symbols = F1AP_SRS_NUMBER_OF_SYMBOLS_N2;
+          break;
+        case NR_SRS_Resource__resourceMapping__nrofSymbols_n4:
+          srs_resource->nr_of_symbols = F1AP_SRS_NUMBER_OF_SYMBOLS_N4;
+          break;
+        default:
+          AssertFatal(false, "Illegal number of symbols\n");
+          break;
+      }
+
+      switch (rrc_res->resourceMapping.repetitionFactor) {
+        case NR_SRS_Resource__resourceMapping__repetitionFactor_n1:
+          srs_resource->repetition_factor = F1AP_SRS_REPETITION_FACTOR_RF1;
+          break;
+        case NR_SRS_Resource__resourceMapping__repetitionFactor_n2:
+          srs_resource->repetition_factor = F1AP_SRS_REPETITION_FACTOR_RF2;
+          break;
+        case NR_SRS_Resource__resourceMapping__repetitionFactor_n4:
+          srs_resource->repetition_factor = F1AP_SRS_REPETITION_FACTOR_RF4;
+          break;
+        default:
+          AssertFatal(false, "Illegal Repetition Factor\n");
+          break;
+      }
+
+      srs_resource->freq_domain_position = rrc_res->freqDomainPosition;
+      srs_resource->freq_domain_shift = rrc_res->freqDomainShift;
+      srs_resource->c_srs = rrc_res->freqHopping.c_SRS;
+      srs_resource->b_srs = rrc_res->freqHopping.b_SRS;
+      srs_resource->b_hop = rrc_res->freqHopping.b_hop;
+
+      switch (rrc_res->groupOrSequenceHopping) {
+        case NR_SRS_Resource__groupOrSequenceHopping_neither:
+          srs_resource->group_or_sequence_hopping = F1AP_GROUPORSEQUENCEHOPPING_NOTHING;
+          break;
+        case NR_SRS_Resource__groupOrSequenceHopping_groupHopping:
+          srs_resource->group_or_sequence_hopping = F1AP_GROUPORSEQUENCEHOPPING_GROUPHOPPING;
+          break;
+        case NR_SRS_Resource__groupOrSequenceHopping_sequenceHopping:
+          srs_resource->group_or_sequence_hopping = F1AP_GROUPORSEQUENCEHOPPING_SEQUENCEHOPPING;
+          break;
+        default:
+          AssertFatal(false, "Illegal group or sequence hopping\n");
+          break;
+      }
+
+      switch (rrc_res->resourceType.present) {
+        case NR_SRS_Resource__resourceType_PR_NOTHING:
+          srs_resource->resource_type.present = F1AP_RESOURCE_TYPE_PR_NOTHING;
+          break;
+        case NR_SRS_Resource__resourceType_PR_periodic:
+          srs_resource->resource_type.present = F1AP_RESOURCE_TYPE_PR_PERIODIC;
+          f1ap_resource_type_periodic_t *periodic = &srs_resource->resource_type.choice.periodic;
+          struct NR_SRS_Resource__resourceType__periodic *rrc_periodic = rrc_res->resourceType.choice.periodic;
+          NR_SRS_PeriodicityAndOffset_t *rrc_periodicityAndOffset_p = &rrc_periodic->periodicityAndOffset_p;
+          switch (rrc_periodicityAndOffset_p->present) {
+            case NR_SRS_PeriodicityAndOffset_PR_sl1:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT1;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl1;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl2:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT2;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl2;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl4:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT4;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl4;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl5:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT5;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl5;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl8:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT8;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl8;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl10:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT10;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl10;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl16:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT16;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl16;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl20:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT20;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl20;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl32:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT32;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl32;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl40:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT40;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl40;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl64:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT64;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl64;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl80:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT80;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl80;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl160:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT160;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl160;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl320:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT320;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl320;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl640:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT640;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl640;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl1280:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT1280;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl1280;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl2560:
+              periodic->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT2560;
+              periodic->offset = rrc_periodicityAndOffset_p->choice.sl2560;
+              break;
+            default:
+              AssertFatal(false, "illegal periodicity\n");
+              break;
+          }
+          break;
+        case NR_SRS_Resource__resourceType_PR_semi_persistent:
+          srs_resource->resource_type.present = F1AP_RESOURCE_TYPE_PR_SEMI_PERSISTENT;
+          f1ap_resource_type_semi_persistent_t *semi_persistent = &srs_resource->resource_type.choice.semi_persistent;
+          struct NR_SRS_Resource__resourceType__semi_persistent *rrc_semi_persistent = rrc_res->resourceType.choice.semi_persistent;
+          NR_SRS_PeriodicityAndOffset_t *rrc_periodicityAndOffset_sp = &rrc_semi_persistent->periodicityAndOffset_sp;
+          switch (rrc_periodicityAndOffset_sp->present) {
+            case NR_SRS_PeriodicityAndOffset_PR_sl1:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT1;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl1;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl2:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT2;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl2;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl4:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT4;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl4;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl5:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT5;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl5;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl8:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT8;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl8;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl10:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT10;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl10;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl16:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT16;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl16;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl20:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT20;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl20;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl32:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT32;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl32;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl40:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT40;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl40;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl64:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT64;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl64;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl80:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT80;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl80;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl160:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT160;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl160;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl320:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT320;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl320;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl640:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT640;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl640;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl1280:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT1280;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl1280;
+              break;
+            case NR_SRS_PeriodicityAndOffset_PR_sl2560:
+              semi_persistent->periodicity = F1AP_SRS_RESOURCE_TYPE_PERIODICITY_SLOT2560;
+              semi_persistent->offset = rrc_periodicityAndOffset_sp->choice.sl2560;
+              break;
+            default:
+              AssertFatal(false, "illegal periodicity\n");
+              break;
+          }
+          break;
+        case NR_SRS_Resource__resourceType_PR_aperiodic:
+          srs_resource->resource_type.present = F1AP_RESOURCE_TYPE_PR_APERIODIC;
+          srs_resource->resource_type.choice.aperiodic = true;
+          break;
+        default:
+          AssertFatal(false, "illegal resource type\n");
+          break;
+      }
+      srs_resource->sequence_id = rrc_res->sequenceId;
+    }
+  }
+
+  // SRS Resource Set List
+  if (rrc_srs_config->srs_ResourceSetToAddModList) {
+    f1_srs_config->srs_resource_set_list = calloc_or_fail(1, sizeof(*f1_srs_config->srs_resource_set_list));
+    f1ap_srs_resource_set_list_t *srs_resource_set_list = f1_srs_config->srs_resource_set_list;
+    uint32_t srs_resource_set_list_length = rrc_srs_config->srs_ResourceSetToAddModList->list.count;
+    srs_resource_set_list->srs_resource_set_list_length = srs_resource_set_list_length;
+    srs_resource_set_list->srs_resource_set =
+        calloc_or_fail(srs_resource_set_list_length, sizeof(*srs_resource_set_list->srs_resource_set));
+
+    for (int i = 0; i < srs_resource_set_list_length; i++) {
+      f1ap_srs_resource_set_t *srs_resource_set = &srs_resource_set_list->srs_resource_set[i];
+      NR_SRS_ResourceSet_t *rrc_set = rrc_srs_config->srs_ResourceSetToAddModList->list.array[i];
+      srs_resource_set->srs_resource_set_id = rrc_set->srs_ResourceSetId;
+
+      uint8_t srs_resource_id_list_length = rrc_set->srs_ResourceIdList->list.count;
+      f1ap_srs_resource_id_list_t *srs_resource_id_list = &srs_resource_set->srs_resource_id_list;
+      srs_resource_id_list->srs_resource_id_list_length = srs_resource_id_list_length;
+      srs_resource_id_list->srs_resource_id =
+          calloc_or_fail(srs_resource_id_list_length, sizeof(*srs_resource_id_list->srs_resource_id));
+      for (int k = 0; k < srs_resource_id_list_length; k++) {
+        srs_resource_id_list->srs_resource_id[k] = *rrc_set->srs_ResourceIdList->list.array[k];
+      }
+
+      f1ap_resource_set_type_t *resource_set_type = &srs_resource_set->resource_set_type;
+
+      switch (rrc_set->resourceType.present) {
+        case NR_SRS_ResourceSet__resourceType_PR_periodic:
+          resource_set_type->present = F1AP_RESOURCE_SET_TYPE_PR_PERIODIC;
+          resource_set_type->choice.periodic = 0;
+          break;
+        case NR_SRS_ResourceSet__resourceType_PR_semi_persistent:
+          resource_set_type->present = F1AP_RESOURCE_SET_TYPE_PR_SEMI_PERSISTENT;
+          resource_set_type->choice.semi_persistent = 0;
+          break;
+        case NR_SRS_ResourceSet__resourceType_PR_aperiodic: {
+          struct NR_SRS_ResourceSet__resourceType__aperiodic *rs_aperiodic = rrc_set->resourceType.choice.aperiodic;
+          resource_set_type->present = F1AP_RESOURCE_SET_TYPE_PR_APERIODIC;
+          resource_set_type->choice.aperiodic.srs_resource_trigger = rs_aperiodic->aperiodicSRS_ResourceTrigger;
+          if (rs_aperiodic->slotOffset)
+            resource_set_type->choice.aperiodic.slot_offset = *rs_aperiodic->slotOffset;
+          break;
+        }
+        default:
+          AssertFatal(false, "illegal resource type\n");
+          break;
+      }
+    }
+  }
+
+  return srs_configuration;
+}

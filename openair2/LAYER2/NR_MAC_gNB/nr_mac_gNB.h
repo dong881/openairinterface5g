@@ -782,6 +782,7 @@ typedef struct nr_mac_rrc_ul_if_s {
   ue_context_release_complete_func_t ue_context_release_complete;
   initial_ul_rrc_message_transfer_func_t initial_ul_rrc_message_transfer;
   trp_information_response_func_t trp_information_response;
+  positioning_information_response_func_t positioning_information_response;
 } nr_mac_rrc_ul_if_t;
 
 typedef struct measgap_config {

@@ -22,6 +22,7 @@ typedef void (*ue_context_release_complete_func_t)(const f1ap_ue_context_rel_cpl
 
 typedef void (*initial_ul_rrc_message_transfer_func_t)(module_id_t module_id, const f1ap_initial_ul_rrc_message_t *ul_rrc);
 typedef void (*trp_information_response_func_t)(const f1ap_trp_information_resp_t *resp);
+typedef void (*positioning_information_response_func_t)(const f1ap_positioning_information_resp_t *resp);
 
 struct nr_mac_rrc_ul_if_s;
 void mac_rrc_ul_direct_init(struct nr_mac_rrc_ul_if_s *mac_rrc);

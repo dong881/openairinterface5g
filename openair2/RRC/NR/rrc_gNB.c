@@ -3711,6 +3711,15 @@ void *rrc_gnb_task(void *args_p)
         free_trp_information_resp(&F1AP_TRP_INFORMATION_RESP(msg_p));
         break;
 
+      case NRPPA_POSITIONING_INFORMATION_REQ:
+        rrc_gNB_process_positioning_information_request(RC.nrrrc[instance], &NRPPA_POSITIONING_INFORMATION_REQ(msg_p));
+        break;
+
+      case F1AP_POSITIONING_INFORMATION_RESP:
+        rrc_CU_process_positioning_information_response(&F1AP_POSITIONING_INFORMATION_RESP(msg_p));
+        free_positioning_information_resp(&F1AP_POSITIONING_INFORMATION_RESP(msg_p));
+        break;
+
       default:
         LOG_E(NR_RRC, "[gNB %ld] Received unexpected message %s\n", instance, msg_name_p);
         break;
