@@ -141,6 +141,14 @@ static void trp_information_request_f1ap(sctp_assoc_t assoc_id, const f1ap_trp_i
   itti_send_msg_to_task(TASK_CU_F1, 0, message_p);
 }
 
+static void positioning_information_request_f1ap(sctp_assoc_t assoc_id, const f1ap_positioning_information_req_t *req)
+{
+  MessageDef *message_p = itti_alloc_new_message(TASK_RRC_GNB, 0, F1AP_POSITIONING_INFORMATION_REQ);
+  message_p->ittiMsgHeader.originInstance = assoc_id;
+  F1AP_POSITIONING_INFORMATION_REQ(message_p) = cp_positioning_information_req(req);
+  itti_send_msg_to_task(TASK_CU_F1, 0, message_p);
+}
+
 void mac_rrc_dl_f1ap_init(nr_mac_rrc_dl_if_t *mac_rrc)
 {
   mac_rrc->f1_reset = f1_reset_cu_initiated_f1ap;
@@ -156,4 +164,5 @@ void mac_rrc_dl_f1ap_init(nr_mac_rrc_dl_if_t *mac_rrc)
   mac_rrc->dl_rrc_message_transfer = dl_rrc_message_transfer_f1ap;
   mac_rrc->paging_transfer = paging_f1ap;
   mac_rrc->trp_information_request = trp_information_request_f1ap;
+  mac_rrc->positioning_information_request = positioning_information_request_f1ap;
 }

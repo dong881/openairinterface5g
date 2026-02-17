@@ -140,6 +140,13 @@ static void trp_information_response_f1ap(const f1ap_trp_information_resp_t *res
   itti_send_msg_to_task(TASK_DU_F1, 0, msg);
 }
 
+static void positioning_information_response_f1ap(const f1ap_positioning_information_resp_t *resp)
+{
+  MessageDef *msg = itti_alloc_new_message(TASK_MAC_GNB, 0, F1AP_POSITIONING_INFORMATION_RESP);
+  F1AP_POSITIONING_INFORMATION_RESP(msg) = cp_positioning_information_resp(resp);
+  itti_send_msg_to_task(TASK_DU_F1, 0, msg);
+}
+
 void mac_rrc_ul_f1ap_init(struct nr_mac_rrc_ul_if_s *mac_rrc)
 {
   mac_rrc->f1_reset = f1_reset_du_initiated_f1ap;
@@ -153,5 +160,6 @@ void mac_rrc_ul_f1ap_init(struct nr_mac_rrc_ul_if_s *mac_rrc)
   mac_rrc->ue_context_release_complete = ue_context_release_complete_f1ap;
   mac_rrc->initial_ul_rrc_message_transfer = initial_ul_rrc_message_transfer_f1ap;
   mac_rrc->trp_information_response = trp_information_response_f1ap;
+  mac_rrc->positioning_information_response = positioning_information_response_f1ap;
 }
 

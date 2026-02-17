@@ -71,7 +71,7 @@ static const f1ap_message_processing_t f1ap_messages_processing[][3] = {
     {0, 0, 0}, /* PositioningMeasurementFailureIndication */
     {0, 0, 0}, /* PositioningMeasurementUpdate */
     {DU_handle_TRP_INFORMATION_REQUEST, CU_handle_TRP_INFORMATION_RESPONSE, 0}, /* TRPInformationExchange */
-    {0, 0, 0}, /* PositioningInformationExchange */
+    {DU_handle_POSITIONING_INFORMATION_REQUEST, CU_handle_POSITIONING_INFORMATION_RESPONSE, 0}, /* PositioningInformationExchange */
     {0, 0, 0}, /* PositioningActivation */
     {0, 0, 0}, /* PositioningDeactivation */
     {0, 0, 0}, /* E_CIDMeasurementInitiation */

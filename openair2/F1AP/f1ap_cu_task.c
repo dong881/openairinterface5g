@@ -188,6 +188,10 @@ void *F1AP_CU_task(void *arg)
         CU_send_TRP_INFORMATION_REQUEST(assoc_id, &F1AP_TRP_INFORMATION_REQ(received_msg));
         break;
 
+      case F1AP_POSITIONING_INFORMATION_REQ:
+        CU_send_POSITIONING_INFORMATION_REQUEST(assoc_id, &F1AP_POSITIONING_INFORMATION_REQ(received_msg));
+        break;
+
       case TERMINATE_MESSAGE:
         LOG_W(F1AP, " *** Exiting F1AP thread\n");
         itti_exit_task();
