@@ -1402,6 +1402,7 @@ static f1ap_srs_config_t cp_srs_config(const f1ap_srs_config_t *in_config)
 
       f1ap_resource_type_t *f1_res_type = &f1_srs_resource->resource_type;
       f1ap_resource_type_t *res_type = &srs_resource->resource_type;
+      f1_res_type->present = res_type->present;
       if (res_type->present == F1AP_RESOURCE_TYPE_PR_NOTHING) {
         // nothing to copy
       } else if (res_type->present == F1AP_RESOURCE_TYPE_PR_PERIODIC) {
