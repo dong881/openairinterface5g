@@ -626,3 +626,51 @@ void rrc_CU_process_positioning_information_response(f1ap_positioning_informatio
   LOG_I(NR_RRC, "Sending NRPPA_POSITIONING_INFORMATION_RESP to TASK_NRPPA\n");
   itti_send_msg_to_task(TASK_NRPPA, 0, msg_resp);
 }
+
+void rrc_gNB_process_positioning_activation_request(gNB_RRC_INST *rrc, const nrppa_positioning_activation_req_t *msg)
+{
+  f1ap_positioning_activation_req_t f1ap_msg = {0};
+  nrppa_gNB_ue_context_t *nrppa_ue_context = nrppa_get_ue_context(msg->transaction_id);
+  rrc_gNB_ue_context_t *ue_context_p = rrc_gNB_get_ue_context(rrc, nrppa_ue_context->gNB_ue_ngap_id);
+  if (!ue_context_p) {
+    LOG_E(RRC, "could not find UE context for CU UE ID %u, aborting transaction\n", nrppa_ue_context->gNB_ue_ngap_id);
+    return;
+  }
+  gNB_RRC_UE_t *UE = &ue_context_p->ue_context;
+  f1_ue_data_t ue_data = cu_get_f1_ue_data(UE->rrc_ue_id);
+  RETURN_IF_INVALID_ASSOC_ID(ue_data.du_assoc_id);
+  f1ap_msg.gNB_CU_ue_id = UE->rrc_ue_id;
+  f1ap_msg.gNB_DU_ue_id = ue_data.secondary_ue;
+  const nrppa_srs_type_t *srs_type = &msg->srs_type;
+  f1ap_srs_type_t *f1_srs_type = &f1ap_msg.srs_type;
+  switch (srs_type->present) {
+    case NRPPA_SRS_TYPE_PR_NOTHING:
+      f1_srs_type->present = F1AP_SRS_TYPE_PR_NOTHING;
+      break;
+    case NRPPA_SRS_TYPE_PR_SEMIPERSISTENTSRS:
+      f1_srs_type->present = F1AP_SRS_TYPE_PR_SEMIPERSISTENTSRS;
+      f1_srs_type->choice.srs_resource_set_id = calloc_or_fail(1, sizeof(*f1_srs_type->choice.srs_resource_set_id));
+      *f1_srs_type->choice.srs_resource_set_id = *srs_type->choice.srs_resource_set_id;
+      break;
+    case NRPPA_SRS_TYPE_PR_APERIODICSRS:
+      f1_srs_type->present = F1AP_SRS_TYPE_PR_APERIODICSRS;
+      f1_srs_type->choice.aperiodic = calloc_or_fail(1, sizeof(*f1_srs_type->choice.aperiodic));
+      *f1_srs_type->choice.aperiodic = *srs_type->choice.aperiodic;
+      break;
+    default:
+      AssertFatal(false, "Illegal SRS Type\n");
+      break;
+  }
+  rrc->mac_rrc.positioning_activation_request(ue_data.du_assoc_id, &f1ap_msg);
+  free_positioning_activation_req(&f1ap_msg);
+}
+
+void rrc_CU_process_positioning_activation_response(f1ap_positioning_activation_resp_t *f1ap_msg)
+{
+  MessageDef *msg_resp = itti_alloc_new_message(TASK_RRC_GNB, 0, NRPPA_POSITIONING_ACTIVATION_RESP);
+  nrppa_positioning_activation_resp_t *nrppa_msg = &NRPPA_POSITIONING_ACTIVATION_RESP(msg_resp);
+  nrppa_gNB_ue_context_t *nrppa_ue_context = nrppa_get_context_by_ue_id(f1ap_msg->gNB_CU_ue_id);
+  nrppa_msg->transaction_id = nrppa_ue_context->transaction_id;
+  LOG_I(NR_RRC, "Sending NRPPA_POSITIONING_ACTIVATION_RESP to TASK_NRPPA\n");
+  itti_send_msg_to_task(TASK_NRPPA, 0, msg_resp);
+}

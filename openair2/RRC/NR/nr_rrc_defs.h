@@ -430,6 +430,7 @@ typedef struct nr_mac_rrc_dl_if_s {
   f1_paging_transfer_func_t paging_transfer;
   trp_information_request_func_t trp_information_request;
   positioning_information_request_func_t positioning_information_request;
+  positioning_activation_request_func_t positioning_activation_request;
 } nr_mac_rrc_dl_if_t;
 
 typedef struct cucp_cuup_if_s {

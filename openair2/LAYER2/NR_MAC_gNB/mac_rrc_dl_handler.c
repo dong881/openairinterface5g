@@ -1183,3 +1183,16 @@ void positioning_information_request(const f1ap_positioning_information_req_t *r
   mac->mac_rrc.positioning_information_response(&resp);
   free_positioning_information_resp(&resp);
 }
+
+void positioning_activation_request(const f1ap_positioning_activation_req_t *req)
+{
+  f1ap_positioning_activation_resp_t resp = {.gNB_CU_ue_id = req->gNB_CU_ue_id, .gNB_DU_ue_id = req->gNB_DU_ue_id};
+  gNB_MAC_INST *mac = RC.nrmac[0];
+  // Currently in OAI-LMF its hardcoded to aperiodic SRS
+  // Ignoring the SRS type and considering periodic SRS
+  NR_SCHED_LOCK(&mac->sched_lock);
+  NR_UE_info_t *UE = find_nr_UE(&mac->UE_info, req->gNB_DU_ue_id);
+  add_pos_act_ue_context(mac, UE->rnti);
+  NR_SCHED_UNLOCK(&mac->sched_lock);
+  mac->mac_rrc.positioning_activation_response(&resp);
+}

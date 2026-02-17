@@ -22,6 +22,7 @@
 #include "common/utils/ds/byte_array.h"
 #include "common/utils/ds/spsc_q.h"
 #include "openair2/LAYER2/nr_rlc/nr_rlc_configuration.h"
+#include "openair2/LAYER2/NR_MAC_gNB/nr_pos_ue_context.h"
 
 #define NR_SCHED_LOCK(lock)                                        \
   do {                                                             \
@@ -783,6 +784,7 @@ typedef struct nr_mac_rrc_ul_if_s {
   initial_ul_rrc_message_transfer_func_t initial_ul_rrc_message_transfer;
   trp_information_response_func_t trp_information_response;
   positioning_information_response_func_t positioning_information_response;
+  positioning_activation_response_func_t positioning_activation_response;
 } nr_mac_rrc_ul_if_t;
 
 typedef struct measgap_config {
@@ -1292,6 +1294,7 @@ typedef struct gNB_MAC_INST_s {
 
   NR_du_stats_t du_stats;
 
+  seq_arr_t pos_act_ue_arr;
 } gNB_MAC_INST;
 
 #endif /*__LAYER2_NR_MAC_GNB_H__ */

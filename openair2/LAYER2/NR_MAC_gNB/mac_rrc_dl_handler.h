@@ -26,5 +26,6 @@ void f1_paging(const f1ap_paging_t *paging);
 
 void trp_information_request(const f1ap_trp_information_req_t *req);
 void positioning_information_request(const f1ap_positioning_information_req_t *req);
+void positioning_activation_request(const f1ap_positioning_activation_req_t *req);
 
 #endif /* MAC_RRC_DL_HANDLER_H */

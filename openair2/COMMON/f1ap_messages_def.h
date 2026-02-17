@@ -55,6 +55,10 @@ MESSAGE_DEF(F1AP_POSITIONING_INFORMATION_REQ,
             MESSAGE_PRIORITY_MED,
             f1ap_positioning_information_req_t,
             f1ap_positioning_information_req)
+MESSAGE_DEF(F1AP_POSITIONING_ACTIVATION_REQ,
+            MESSAGE_PRIORITY_MED,
+            f1ap_positioning_activation_req_t,
+            f1ap_positioning_activation_req)
 
 /* DU -> CU*/
 MESSAGE_DEF(F1AP_TRP_INFORMATION_RESP, MESSAGE_PRIORITY_MED, f1ap_trp_information_resp_t, f1ap_trp_information_resp)
@@ -62,3 +66,7 @@ MESSAGE_DEF(F1AP_POSITIONING_INFORMATION_RESP,
             MESSAGE_PRIORITY_MED,
             f1ap_positioning_information_resp_t,
             f1ap_positioning_information_resp)
+MESSAGE_DEF(F1AP_POSITIONING_ACTIVATION_RESP,
+            MESSAGE_PRIORITY_MED,
+            f1ap_positioning_activation_resp_t,
+            f1ap_positioning_activation_resp)
