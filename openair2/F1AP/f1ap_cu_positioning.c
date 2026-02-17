@@ -83,3 +83,41 @@ int CU_handle_POSITIONING_INFORMATION_RESPONSE(instance_t instance, sctp_assoc_t
   itti_send_msg_to_task(TASK_RRC_GNB, instance, msg_p);
   return 0;
 }
+
+int CU_send_POSITIONING_ACTIVATION_REQUEST(sctp_assoc_t assoc_id, f1ap_positioning_activation_req_t *req)
+{
+  F1AP_F1AP_PDU_t *pdu = encode_positioning_activation_req(req);
+  if (pdu == NULL) {
+    LOG_E(F1AP, "Failed to encode F1 Positioning Activation Request\n");
+    return -1;
+  }
+
+  byte_array_t ba = {0};
+  uint32_t encoded_len = 0;
+  /* encode */
+  if (f1ap_encode_pdu(pdu, &ba.buf, &encoded_len) < 0) {
+    LOG_E(F1AP, "Failed to encode F1 Positioning Activation Request PDU\n");
+    ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
+    return -1;
+  }
+  ASN_STRUCT_FREE(asn_DEF_F1AP_F1AP_PDU, pdu);
+  /* Ownership of ba.buf is transferred to SCTP task; do not free here. */
+  f1ap_itti_send_sctp_data_req(assoc_id, ba.buf, encoded_len);
+  return 0;
+}
+
+int CU_handle_POSITIONING_ACTIVATION_RESPONSE(instance_t instance, sctp_assoc_t assoc_id, uint32_t stream, F1AP_F1AP_PDU_t *pdu)
+{
+  f1ap_positioning_activation_resp_t resp = {0};
+  if (!decode_positioning_activation_resp(pdu, &resp)) {
+    LOG_E(F1AP, "cannot decode F1 Positioning Activation Response\n");
+    free_positioning_activation_resp(&resp);
+    return -1;
+  }
+
+  MessageDef *msg_p = itti_alloc_new_message(TASK_DU_F1, 0, F1AP_POSITIONING_ACTIVATION_RESP);
+  msg_p->ittiMsgHeader.originInstance = assoc_id;
+  F1AP_POSITIONING_ACTIVATION_RESP(msg_p) = resp;
+  itti_send_msg_to_task(TASK_RRC_GNB, instance, msg_p);
+  return 0;
+}
