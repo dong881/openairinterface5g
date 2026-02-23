@@ -102,6 +102,12 @@ static void positioning_activation_request_direct(sctp_assoc_t assoc_id, const f
   positioning_activation_request(req);
 }
 
+static void positioning_measurement_request_direct(sctp_assoc_t assoc_id, const f1ap_positioning_measurement_req_t *req)
+{
+  AssertFatal(assoc_id == -1, "illegal assoc_id %d\n", assoc_id);
+  positioning_measurement_request(req);
+}
+
 void mac_rrc_dl_direct_init(nr_mac_rrc_dl_if_t *mac_rrc)
 {
   mac_rrc->f1_reset = f1_reset_cu_initiated_direct;
@@ -119,4 +125,5 @@ void mac_rrc_dl_direct_init(nr_mac_rrc_dl_if_t *mac_rrc)
   mac_rrc->trp_information_request = trp_information_request_direct;
   mac_rrc->positioning_information_request = positioning_information_request_direct;
   mac_rrc->positioning_activation_request = positioning_activation_request_direct;
+  mac_rrc->positioning_measurement_request = positioning_measurement_request_direct;
 }

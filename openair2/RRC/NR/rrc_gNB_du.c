@@ -1276,3 +1276,11 @@ void rrc_send_trp_information_request_to_dus(gNB_RRC_INST *rrc, f1ap_trp_informa
     rrc->mac_rrc.trp_information_request(du->assoc_id, msg);
   }
 }
+
+void rrc_send_positioning_measurement_request_to_dus(gNB_RRC_INST *rrc, f1ap_positioning_measurement_req_t *msg)
+{
+  nr_rrc_du_container_t *du = NULL;
+  RB_FOREACH (du, rrc_du_tree, &rrc->dus) {
+    rrc->mac_rrc.positioning_measurement_request(du->assoc_id, msg);
+  }
+}

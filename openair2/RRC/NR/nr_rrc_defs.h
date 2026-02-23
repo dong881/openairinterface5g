@@ -431,6 +431,7 @@ typedef struct nr_mac_rrc_dl_if_s {
   trp_information_request_func_t trp_information_request;
   positioning_information_request_func_t positioning_information_request;
   positioning_activation_request_func_t positioning_activation_request;
+  positioning_measurement_request_func_t positioning_measurement_request;
 } nr_mac_rrc_dl_if_t;
 
 typedef struct cucp_cuup_if_s {

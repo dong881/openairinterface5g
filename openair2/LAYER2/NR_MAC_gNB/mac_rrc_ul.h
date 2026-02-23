@@ -24,6 +24,7 @@ typedef void (*initial_ul_rrc_message_transfer_func_t)(module_id_t module_id, co
 typedef void (*trp_information_response_func_t)(const f1ap_trp_information_resp_t *resp);
 typedef void (*positioning_information_response_func_t)(const f1ap_positioning_information_resp_t *resp);
 typedef void (*positioning_activation_response_func_t)(const f1ap_positioning_activation_resp_t *resp);
+typedef void (*positioning_measurement_response_func_t)(const f1ap_positioning_measurement_resp_t *resp);
 
 struct nr_mac_rrc_ul_if_s;
 void mac_rrc_ul_direct_init(struct nr_mac_rrc_ul_if_s *mac_rrc);

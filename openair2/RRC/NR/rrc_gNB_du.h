@@ -17,6 +17,7 @@ struct nr_rrc_cell_container_t;
 struct f1ap_gnb_du_configuration_update_s;
 struct f1ap_served_cell_info_t;
 struct f1ap_trp_information_req_s;
+struct f1ap_measurement_req_s;
 
 #include "f1ap_messages_types.h"
 #include "ngap_messages_types.h"
@@ -48,5 +49,6 @@ void trigger_f1_reset(struct gNB_RRC_INST_s *rrc, sctp_assoc_t du_assoc_id);
 void rrc_send_paging_to_dus(struct gNB_RRC_INST_s *rrc, const nr_tai_t tais[], uint8_t n_tai, f1ap_paging_t *f1ap_msg);
 
 void rrc_send_trp_information_request_to_dus(struct gNB_RRC_INST_s *rrc, struct f1ap_trp_information_req_s *msg);
+void rrc_send_positioning_measurement_request_to_dus(struct gNB_RRC_INST_s *rrc, struct f1ap_measurement_req_s *msg);
 
 #endif /* RRC_GNB_DU_H_ */

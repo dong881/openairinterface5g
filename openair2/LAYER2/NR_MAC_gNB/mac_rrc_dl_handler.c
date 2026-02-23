@@ -1196,3 +1196,13 @@ void positioning_activation_request(const f1ap_positioning_activation_req_t *req
   NR_SCHED_UNLOCK(&mac->sched_lock);
   mac->mac_rrc.positioning_activation_response(&resp);
 }
+
+void positioning_measurement_request(const f1ap_positioning_measurement_req_t *req)
+{
+  gNB_MAC_INST *mac = RC.nrmac[0];
+  NR_SCHED_LOCK(&mac->sched_lock);
+  positioning_measurement_info_t *pos_meas_info = &mac->pos_meas_info;
+  pos_meas_info->meas_req = *req;
+  pos_meas_info->active = true;
+  NR_SCHED_UNLOCK(&mac->sched_lock);
+}
