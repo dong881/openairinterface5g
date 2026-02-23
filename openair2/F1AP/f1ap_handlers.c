@@ -63,7 +63,7 @@ static const f1ap_message_processing_t f1ap_messages_processing[][3] = {
     {0, 0, 0}, /* accessAndMobilityIndication */
     {0, 0, 0}, /* accessSuccess */
     {0, 0, 0}, /* cellTrafficTrace */
-    {0, 0, 0}, /* PositioningMeasurementExchange */
+    {DU_handle_POSITIONING_MEASUREMENT_REQUEST, CU_handle_POSITIONING_MEASUREMENT_RESPONSE, 0}, /* PositioningMeasurementExchange */
     {0, 0, 0}, /* PositioningAssistanceInformationControl */
     {0, 0, 0}, /* PositioningAssistanceInformationFeedback */
     {0, 0, 0}, /* PositioningMeasurementReport */
