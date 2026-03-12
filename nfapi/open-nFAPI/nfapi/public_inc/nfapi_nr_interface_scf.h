@@ -75,7 +75,8 @@ typedef enum {
 
   NFAPI_NR_PHY_MSG_TYPE_UL_NODE_SYNC = 0x0180,
   NFAPI_NR_PHY_MSG_TYPE_DL_NODE_SYNC,
-  NFAPI_NR_PHY_MSG_TYPE_TIMING_INFO
+  NFAPI_NR_PHY_MSG_TYPE_TIMING_INFO,
+  NFAPI_NR_PHY_MSG_TYPE_SRS_TOA_VENDOR_EXTENSION_INDICATION = 0x0300 // vendor extension for positioning
 } nfapi_nr_phy_msg_type_e;
 
 // SCF222_5G-FAPI_PHY_SPI_Specificayion.pdf Section 3.3
@@ -1979,6 +1980,15 @@ typedef struct {
   nfapi_nr_srs_indication_pdu_t *pdu_list;
 } nfapi_nr_srs_indication_t;
 
+#define NFAPI_NR_MAX_NUM_TA_NSEC 32
+typedef struct {
+  nfapi_nr_p7_message_header_t header;
+  uint16_t sfn; // SFN. Value: 0 -> 1023
+  uint16_t slot; // Slot. Value: 0 -> 159
+  uint16_t rnti;
+  uint8_t num_ta;
+  int16_t ta_offset_nsec[NFAPI_NR_MAX_NUM_TA_NSEC];
+} nfapi_nr_srs_toa_vendor_ext_indication_t;
 
 //3.4.11 rach_indication
 #define NFAPI_NR_RACH_IND_MAX_PDU 100

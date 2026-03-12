@@ -279,6 +279,10 @@ int nfapi_nr_p7_message_pack(void *pMessageBuf, void *pPackedBuf, uint32_t packe
       result = pack_nr_srs_indication(pMessageHeader, &pWritePackedMessage, end);
       break;
 
+    case NFAPI_NR_PHY_MSG_TYPE_SRS_TOA_VENDOR_EXTENSION_INDICATION:
+      result = pack_nr_srs_toa_vendor_ext_indication(pMessageHeader, &pWritePackedMessage, end);
+      break;
+
     case NFAPI_NR_PHY_MSG_TYPE_RACH_INDICATION:
       result = pack_nr_rach_indication(pMessageHeader, &pWritePackedMessage, end);
       break;
@@ -647,6 +651,12 @@ bool nfapi_nr_p7_message_unpack(void *pMessageBuf,
     case NFAPI_NR_PHY_MSG_TYPE_SRS_INDICATION:
       if (check_nr_fapi_unpack_length(NFAPI_NR_PHY_MSG_TYPE_SRS_INDICATION, unpackedBufLen)) {
         result = unpack_nr_srs_indication(&pReadPackedMessage,  end, pMessageHeader);
+      }
+      break;
+
+    case NFAPI_NR_PHY_MSG_TYPE_SRS_TOA_VENDOR_EXTENSION_INDICATION:
+      if (check_nr_fapi_unpack_length(NFAPI_NR_PHY_MSG_TYPE_SRS_TOA_VENDOR_EXTENSION_INDICATION, unpackedBufLen)) {
+        result = unpack_nr_srs_toa_vendor_ext_indication(&pReadPackedMessage,  end, pMessageHeader);
       }
       break;
 

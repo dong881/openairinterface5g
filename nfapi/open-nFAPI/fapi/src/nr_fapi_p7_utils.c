@@ -808,6 +808,21 @@ bool eq_srs_indication(const nfapi_nr_srs_indication_t *a, const nfapi_nr_srs_in
   return true;
 }
 
+bool eq_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indication_t *a,
+                                      const nfapi_nr_srs_toa_vendor_ext_indication_t *b)
+{
+  EQ(a->header.message_id, b->header.message_id);
+  EQ(a->header.message_length, b->header.message_length);
+  EQ(a->sfn, b->sfn);
+  EQ(a->slot, b->slot);
+  EQ(a->rnti, b->rnti);
+  EQ(a->num_ta, b->num_ta);
+  for (int ta_idx = 0; ta_idx < a->num_ta; ++ta_idx) {
+    EQ(a->ta_offset_nsec[ta_idx], b->ta_offset_nsec[ta_idx]);
+  }
+  return true;
+}
+
 static bool eq_rach_indication_PDU(const nfapi_nr_prach_indication_pdu_t *a, const nfapi_nr_prach_indication_pdu_t *b)
 {
   EQ(a->phy_cell_id, b->phy_cell_id);
@@ -962,6 +977,12 @@ void free_uci_indication(nfapi_nr_uci_indication_t *msg)
 void free_srs_indication(nfapi_nr_srs_indication_t *msg)
 {
   free(msg->pdu_list);
+}
+
+void free_srs_toa_vendor_ext_indication(nfapi_nr_srs_toa_vendor_ext_indication_t *msg)
+{
+  // Nothing to free
+  UNUSED(msg);
 }
 
 void free_rach_indication(nfapi_nr_rach_indication_t *msg)
@@ -1740,6 +1761,20 @@ void copy_srs_indication(const nfapi_nr_srs_indication_t *src, nfapi_nr_srs_indi
   }
 }
 
+void copy_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indication_t *src,
+                                        nfapi_nr_srs_toa_vendor_ext_indication_t *dst)
+{
+  dst->header.message_id = src->header.message_id;
+  dst->header.message_length = src->header.message_length;
+  dst->sfn = src->sfn;
+  dst->slot = src->slot;
+  dst->rnti = src->rnti;
+  dst->num_ta = src->num_ta;
+  for (int ta_idx = 0; ta_idx < src->num_ta; ++ta_idx) {
+    memcpy(dst->ta_offset_nsec, src->ta_offset_nsec, sizeof(dst->ta_offset_nsec));
+  }
+}
+
 size_t get_srs_indication_size(const nfapi_nr_srs_indication_t *msg)
 {
   // Get size of the message (allocated pointer included)
@@ -1752,6 +1787,22 @@ size_t get_srs_indication_size(const nfapi_nr_srs_indication_t *msg)
   total_size += sizeof(msg->control_length);
   total_size += sizeof(msg->number_of_pdus);
   total_size += msg->number_of_pdus * sizeof(*msg->pdu_list);
+
+  return total_size;
+}
+
+size_t get_srs_toa_vendor_ext_indication_size(const nfapi_nr_srs_toa_vendor_ext_indication_t *msg)
+{
+  // Get size of the message (allocated pointer included)
+  size_t total_size = 0;
+
+  // Header and fixed-size fields
+  total_size += sizeof(msg->header);
+  total_size += sizeof(msg->sfn);
+  total_size += sizeof(msg->slot);
+  total_size += sizeof(msg->rnti);
+  total_size += sizeof(msg->num_ta);
+  total_size += sizeof(msg->ta_offset_nsec);
 
   return total_size;
 }
@@ -2684,6 +2735,21 @@ void dump_srs_indication(const nfapi_nr_srs_indication_t *msg)
     INDENTED_PRINTF("Report Type = 0x%02x\n", pdu->report_type);
     dump_srs_report_tlv(&pdu->report_tlv, depth);
     depth--;
+  }
+}
+
+void dump_srs_toa_vendor_ext_indication(const nfapi_nr_srs_toa_vendor_ext_indication_t *msg)
+{
+  int depth = 0;
+  dump_p7_message_header(&msg->header, depth);
+  depth++;
+  INDENTED_PRINTF("SFN = %d\n", msg->sfn);
+  INDENTED_PRINTF("Slot = %d\n", msg->slot);
+  INDENTED_PRINTF("RNTI = 0x%02x\n", msg->rnti);
+  INDENTED_PRINTF("Number of TA_NSEC = %d\n", msg->num_ta);
+  depth++;
+  for (int i = 0; i < msg->num_ta; i++) {
+    INDENTED_PRINTF("Timing advance offset in nanoseconds [%d] = 0x%02x\n", i, msg->ta_offset_nsec[i]);
   }
 }
 
