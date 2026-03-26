@@ -603,16 +603,16 @@ int nr_rx_pusch_tp(PHY_VARS_gNB *gNB,
     nb_re_dmrs = 4*rel15_ul->num_dmrs_cdm_grps_no_data;
 
   uint32_t unav_res = 0;
+  nr_ptrs_info_t ptrs_info = {0};
   if (rel15_ul->pdu_bit_map & PUSCH_PDU_BITMAP_PUSCH_PTRS) {
-    uint16_t ptrsSymbPos = 0;
-    set_ptrs_symb_idx(&ptrsSymbPos,
+    set_ptrs_symb_idx(&ptrs_info.ptrs_symbols,
                       rel15_ul->nr_of_symbols,
                       rel15_ul->start_symbol_index,
                       1 << rel15_ul->pusch_ptrs.ptrs_time_density,
                       rel15_ul->ul_dmrs_symb_pos);
-    int ptrsSymbPerSlot = get_ptrs_symbols_in_slot(ptrsSymbPos, rel15_ul->start_symbol_index, rel15_ul->nr_of_symbols);
-    int n_ptrs = (rel15_ul->rb_size + rel15_ul->pusch_ptrs.ptrs_freq_density - 1) / rel15_ul->pusch_ptrs.ptrs_freq_density;
-    unav_res = n_ptrs * ptrsSymbPerSlot;
+    int ptrsSymbPerSlot = get_ptrs_symbols_in_slot(ptrs_info.ptrs_symbols, rel15_ul->start_symbol_index, rel15_ul->nr_of_symbols);
+    ptrs_info.n_ptrs = (rel15_ul->rb_size + rel15_ul->pusch_ptrs.ptrs_freq_density - 1) / rel15_ul->pusch_ptrs.ptrs_freq_density;
+    unav_res = ptrs_info.n_ptrs * ptrsSymbPerSlot;
   }
 
   // get how many bit in a slot //
