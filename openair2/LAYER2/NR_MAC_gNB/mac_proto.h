@@ -374,6 +374,13 @@ void handle_nr_srs_measurements(const module_id_t module_id,
                                 const slot_t slot,
                                 nfapi_nr_srs_indication_pdu_t *srs_ind);
 
+void handle_nr_srs_toa_vendor_ext_measurements(const module_id_t module_id,
+                                               const frame_t frame,
+                                               const slot_t slot,
+                                               const uint8_t num_ta,
+                                               const int16_t *ta_offset_nsec,
+                                               const rnti_t rnti);
+
 void find_SSB_and_RO_available(gNB_MAC_INST *nrmac);
 
 NR_pdsch_dmrs_t get_dl_dmrs_params(const NR_ServingCellConfigCommon_t *scc,

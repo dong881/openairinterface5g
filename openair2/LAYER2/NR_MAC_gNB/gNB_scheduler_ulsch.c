@@ -13,6 +13,8 @@
 #include "utils.h"
 #include <openair2/UTIL/OPT/opt.h>
 #include "LAYER2/nr_rlc/nr_rlc_oai_api.h"
+#include "openair3/NRPPA/nrppa_gNB_config.h"
+#include "openair2/F1AP/lib/f1ap_positioning.h"
 
 //#define SRS_IND_DEBUG
 #define MAX_NUM_DATA_IND 1024
@@ -1604,10 +1606,221 @@ void handle_nr_srs_measurements(const module_id_t module_id,
       LOG_W(NR_MAC, "MAC procedures for this SRS usage are not implemented yet!\n");
       break;
 
+    // Ignore Positioning usage here: handled in handle_nr_srs_toa_vendor_ext_measurements
+    case NFAPI_NR_SRS_POSITIONING:
+      break;
+
     default:
       AssertFatal(1 == 0, "Invalid SRS usage\n");
   }
   NR_SCHED_UNLOCK(&nrmac->sched_lock);
+}
+
+static int32_t compute_k_value_ul_tdoa(int mu, int16_t ta_offset_nsec, int toa_idx)
+{
+  int32_t Tc_inv = 4096 * 480000;
+  int32_t T_inv = Tc_inv >> mu;
+  int64_t T_ns_inv = 1000000000;
+  int64_t T_ns_inv_by_2 = T_ns_inv >> 1;
+  int32_t k_offset = 985024 >> mu;
+  int32_t k_max = (1970048 >> mu) + 1;
+
+  int32_t k_value;
+  if (ta_offset_nsec != (int16_t)0x8000) {
+    int64_t num = (int64_t)ta_offset_nsec * T_inv;
+    if (num >= 0)
+      k_value = (int32_t)((num + T_ns_inv_by_2) / T_ns_inv) + k_offset;
+    else
+      k_value = (int32_t)((num - T_ns_inv_by_2) / T_ns_inv) + k_offset;
+
+    if (k_value < 0)
+      k_value = 0;
+    if (k_value > k_max)
+      k_value = k_max;
+
+    LOG_I(NR_MAC, "TRP %d, ToA  %d, mu %d, k value %d\n", toa_idx, ta_offset_nsec, mu, k_value);
+  } else {
+    k_value = k_max;
+    LOG_I(NR_MAC, "Invalid Measurement: TRP %d, ToA %d, k value %d\n", toa_idx, ta_offset_nsec, k_value);
+  }
+  return k_value;
+}
+
+static f1ap_pos_measurement_result_list_t generate_pos_measurement_result(const f1ap_pos_measurement_quantities_t *meas_q,
+                                                                          const uint8_t num_trps,
+                                                                          const uint32_t *trp_ids_list,
+                                                                          int mu,
+                                                                          const int16_t *ta_offset_nsec,
+                                                                          const frame_t frame,
+                                                                          const slot_t slot)
+{
+  f1ap_pos_measurement_result_list_t meas_result_list = {0};
+  uint32_t q_len = meas_q->pos_measurement_quantities_length;
+  f1ap_pos_measurement_quantities_item_t *q_item = meas_q->pos_measurement_quantities_item;
+
+  meas_result_list.pos_measurement_result_list_length = num_trps;
+  meas_result_list.pos_measurement_result_list_item =
+      calloc_or_fail(num_trps, sizeof(*meas_result_list.pos_measurement_result_list_item));
+  f1ap_pos_measurement_result_list_item_t *res_item = meas_result_list.pos_measurement_result_list_item;
+
+  // check for trp_id and fill the measurements
+  for (int i = 0; i < num_trps; i++) {
+    res_item[i].trp_id = trp_ids_list[i];
+    f1ap_pos_measurement_result_t *m_res = &res_item[i].pos_measurement_result;
+    m_res->pos_measurement_result_item = calloc_or_fail(q_len, sizeof(*m_res->pos_measurement_result_item));
+    m_res->pos_measurement_result_item_length = q_len;
+    f1ap_pos_measurement_result_item_t *m_res_item = m_res->pos_measurement_result_item;
+    for (int j = 0; j < q_len; j++) {
+      f1ap_measured_results_value_t *m_res_value = &m_res_item[j].measured_results_value;
+      switch (q_item[j].pos_measurement_type) {
+        case F1AP_POSMEASUREMENTTYPE_UL_RTOA:
+          m_res_value->present = F1AP_MEASURED_RESULTS_VALUE_PR_UL_RTOA;
+          f1ap_ul_rtoa_measurement_item_t *ul_rtoa = &m_res_value->choice.ul_rtoa.ul_rtoa_measurement_item;
+
+          int32_t k_value = compute_k_value_ul_tdoa(mu, ta_offset_nsec[i], i);
+
+          switch (mu) {
+            case 0:
+              ul_rtoa->present = F1AP_ULRTOAMEAS_PR_K0;
+              ul_rtoa->choice.k0 = k_value;
+              break;
+            case 1:
+              ul_rtoa->present = F1AP_ULRTOAMEAS_PR_K1;
+              ul_rtoa->choice.k1 = k_value;
+              break;
+            case 2:
+              ul_rtoa->present = F1AP_ULRTOAMEAS_PR_K2;
+              ul_rtoa->choice.k2 = k_value;
+              break;
+            case 3:
+              ul_rtoa->present = F1AP_ULRTOAMEAS_PR_K3;
+              ul_rtoa->choice.k3 = k_value;
+              break;
+            case 4:
+              ul_rtoa->present = F1AP_ULRTOAMEAS_PR_K4;
+              ul_rtoa->choice.k4 = k_value;
+              break;
+            case 5:
+              ul_rtoa->present = F1AP_ULRTOAMEAS_PR_K5;
+              ul_rtoa->choice.k5 = k_value;
+              break;
+            default:
+              break;
+          }
+          break;
+        default:
+          AssertFatal(false, "Unsupported/Illegal Measurement Type\n");
+          break;
+      }
+
+      f1ap_time_stamp_t *time_stamp = &m_res_item[j].time_stamp;
+      // System Frame Number
+      time_stamp->system_frame_number = frame;
+      // Slot number
+      f1ap_time_stamp_slot_index_t *slot_index = &time_stamp->slot_index;
+      switch (mu) {
+        case 0:
+          slot_index->present = F1AP_TIME_STAMP_SLOT_INDEX_PR_SCS_15;
+          slot_index->choice.scs_15 = slot;
+          break;
+        case 1:
+          slot_index->present = F1AP_TIME_STAMP_SLOT_INDEX_PR_SCS_30;
+          slot_index->choice.scs_30 = slot;
+          break;
+        case 2:
+          slot_index->present = F1AP_TIME_STAMP_SLOT_INDEX_PR_SCS_60;
+          slot_index->choice.scs_60 = slot;
+          break;
+        case 3:
+          slot_index->present = F1AP_TIME_STAMP_SLOT_INDEX_PR_SCS_120;
+          slot_index->choice.scs_120 = slot;
+          break;
+        default:
+          AssertFatal(false, "Illegal SCS\n");
+          break;
+      }
+    }
+  }
+  return meas_result_list;
+}
+
+void handle_nr_srs_toa_vendor_ext_measurements(const module_id_t module_id,
+                                               const frame_t frame,
+                                               const slot_t slot,
+                                               const uint8_t num_ta,
+                                               const int16_t *ta_offset_nsec,
+                                               const rnti_t rnti)
+{
+  gNB_MAC_INST *mac = RC.nrmac[module_id];
+  // Return if there is no active measurement request from LMF
+  if (!mac->pos_meas_info.active) {
+    return;
+  }
+  LOG_I(NR_MAC, "Fill Positioning Measurement Response\n");
+  f1ap_positioning_measurement_req_t *req = &mac->pos_meas_info.meas_req;
+  f1ap_positioning_measurement_resp_t resp = {.transaction_id = req->transaction_id,
+                                              .lmf_measurement_id = req->lmf_measurement_id,
+                                              .ran_measurement_id = req->ran_measurement_id};
+  f1ap_srs_configuration_t *srs_configuration = req->srs_configuration;
+  f1ap_srs_carrier_list_t *srs_carrier_list = &srs_configuration->srs_carrier_list;
+  // We dont use carrier aggregation, hence a single srs_carrier_list
+  f1ap_srs_carrier_list_item_t *srs_carrier_list_item = &srs_carrier_list->srs_carrier_list_item[0];
+  f1ap_active_ul_bwp_t *active_ul_bwp = &srs_carrier_list_item->active_ul_bwp;
+  f1ap_subcarrier_spacing_pr subcarrier_spacing = active_ul_bwp->subcarrier_spacing;
+
+  int mu;
+  switch (subcarrier_spacing) {
+    case F1AP_SUBCARRIER_SPACING_15KHZ:
+      mu = 0;
+      break;
+    case F1AP_SUBCARRIER_SPACING_30KHZ:
+      mu = 1;
+      break;
+    case F1AP_SUBCARRIER_SPACING_60KHZ:
+      mu = 2;
+      break;
+    case F1AP_SUBCARRIER_SPACING_120KHZ:
+      mu = 3;
+      break;
+    default:
+      LOG_E(NR_MAC, "unsupported numerology\n");
+      return;
+      break;
+  }
+
+  positioning_config_t positioning_config = RCconfig_nr_positioning();
+  const f1ap_trp_measurement_request_list_t *req_list = &req->trp_measurement_request_list;
+  uint32_t req_list_len = req_list->trp_measurement_request_list_length;
+  f1ap_trp_measurement_request_item_t *req_item = req_list->trp_measurement_request_item;
+  uint32_t trp_ids_list[MAX_NUM_MEASURE_TRPS] = {0};
+  uint8_t num_trps = 0;
+
+  // Count the number of relavent TRPs
+  for (int i = 0; i < req_list_len; i++) {
+    for (int j = 0; j < positioning_config.num_trp; j++) {
+      if (req_item[i].tRPID == positioning_config.trps[j].id) {
+        if (num_trps < MAX_NUM_MEASURE_TRPS) {
+          trp_ids_list[num_trps] = req_item[i].tRPID;
+          num_trps++;
+        }
+        break;
+      }
+    }
+  }
+
+  if (num_ta != num_trps) {
+    LOG_E(NR_MAC, "Number of TRPs doesn't match with number of ToAs\n");
+    // send positioning measurement failure
+    return;
+  }
+
+  resp.pos_measurement_result_list = calloc_or_fail(1, sizeof(*resp.pos_measurement_result_list));
+  *resp.pos_measurement_result_list =
+      generate_pos_measurement_result(&req->pos_measurement_quantities, num_trps, trp_ids_list, mu, ta_offset_nsec, frame, slot);
+  mac->mac_rrc.positioning_measurement_response(&resp);
+  free_positioning_measurement_resp(&resp);
+  rm_pos_act_ue_context(mac, rnti);
+  mac->pos_meas_info.active = false;
 }
 
 static bool nr_UE_is_to_be_scheduled(const frame_structure_t *fs,

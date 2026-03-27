@@ -970,6 +970,12 @@ int phy_nr_srs_indication(nfapi_nr_srs_indication_t *ind)
     handle_nr_srs_measurements(0, ind->sfn, ind->slot, &ind->pdu_list[i]);
   return 1;
 }
+
+int phy_nr_srs_toa_vendor_ext_indication(nfapi_nr_srs_toa_vendor_ext_indication_t *ind)
+{
+  handle_nr_srs_toa_vendor_ext_measurements(0, ind->sfn, ind->slot, ind->num_ta, ind->ta_offset_nsec, ind->rnti);
+  return 1;
+}
 //end NR phy indication
 
 int phy_lbt_dl_indication(struct nfapi_vnf_p7_config *config, nfapi_lbt_dl_indication_t *ind) {
@@ -1272,6 +1278,7 @@ void *configure_nr_p7_vnf(void *ptr)
 #endif
   p7_vnf->config->nr_slot_indication = &phy_nr_slot_indication;
   p7_vnf->config->nr_srs_indication = &phy_nr_srs_indication;
+  p7_vnf->config->nr_srs_toa_vendor_ext_indication = &phy_nr_srs_toa_vendor_ext_indication;
   p7_vnf->config->malloc = &vnf_allocate;
   p7_vnf->config->free = &vnf_deallocate;
   p7_vnf->config->vendor_ext = &phy_nr_vendor_ext;

@@ -442,7 +442,11 @@ static void nr_configure_srs(gNB_MAC_INST *nrmac,
 
   // TODO: This should be completed
   srs_pdu->srs_parameters_v4.srs_bandwidth_size = m_SRS[srs_pdu->config_index];
-  srs_pdu->srs_parameters_v4.usage = 1<<srs_resource_set->usage;
+  srs_pdu->srs_parameters_v4.usage = 1 << srs_resource_set->usage;
+  positioning_activation_info_t *pos_ue_context = get_pos_act_ue_context(nrmac, UE->rnti);
+  if (pos_ue_context != NULL) {
+    srs_pdu->srs_parameters_v4.usage = 1 << NFAPI_NR_SRS_POSITIONING;
+  }
   srs_pdu->srs_parameters_v4.report_type[0] = 1;
   srs_pdu->srs_parameters_v4.iq_representation = 1;
   srs_pdu->srs_parameters_v4.prg_size = 1;

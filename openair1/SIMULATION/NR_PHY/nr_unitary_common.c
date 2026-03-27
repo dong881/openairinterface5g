@@ -34,6 +34,11 @@ int oai_nfapi_nr_srs_indication(nfapi_nr_srs_indication_t *ind)
   UNUSED(ind);
   return (0);
 }
+int oai_nfapi_nr_srs_toa_vendor_ext_indication(nfapi_nr_srs_toa_vendor_ext_indication_t *ind)
+{
+  UNUSED(ind);
+  return (0);
+}
 int oai_nfapi_nr_uci_indication(nfapi_nr_uci_indication_t *ind)
 {
   UNUSED(ind);

@@ -818,7 +818,11 @@ nr_srs_info_t nr_srs_rx_procedures(PHY_VARS_gNB *gNB,
   return nr_srs_info;
 }
 
-static void handle_srs(fsn_t now, PHY_VARS_gNB *gNB, const NR_gNB_SRS_job_t *srs, nfapi_nr_srs_indication_pdu_t *srs_indication)
+static void handle_srs(fsn_t now,
+                       PHY_VARS_gNB *gNB,
+                       const NR_gNB_SRS_job_t *srs,
+                       nfapi_nr_srs_indication_pdu_t *srs_indication,
+                       nfapi_nr_srs_toa_vendor_ext_indication_t *srs_toa_v_ext)
 {
   const NR_DL_FRAME_PARMS *frame_parms = &gNB->frame_parms;
   const nfapi_nr_srs_pdu_t *srs_pdu = &srs->srs_pdu;
@@ -875,6 +879,9 @@ static void handle_srs(fsn_t now, PHY_VARS_gNB *gNB, const NR_gNB_SRS_job_t *srs
     case 1 << NFAPI_NR_SRS_ANTENNASWITCH:
       srs_indication->srs_usage = NFAPI_NR_SRS_ANTENNASWITCH;
       break;
+    case 1 << NFAPI_NR_SRS_POSITIONING:
+      srs_indication->srs_usage = NFAPI_NR_SRS_POSITIONING;
+      break;
     default:
       LOG_E(NR_PHY, "Invalid srs_pdu->srs_parameters_v4.usage %i\n", srs_pdu->srs_parameters_v4.usage);
   }
@@ -922,6 +929,18 @@ static void handle_srs(fsn_t now, PHY_VARS_gNB *gNB, const NR_gNB_SRS_job_t *srs
     case NFAPI_NR_SRS_ANTENNASWITCH:
       LOG_W(NR_PHY, "PHY procedures for this SRS usage are not implemented yet!\n");
       break;
+
+    case NFAPI_NR_SRS_POSITIONING: {
+      nfapi_nr_srs_toa_vendor_ext_indication_t *srs_toa_vendor_ext_ind = srs_toa_v_ext;
+      srs_toa_vendor_ext_ind->sfn = now.f;
+      srs_toa_vendor_ext_ind->slot = now.s;
+      srs_toa_vendor_ext_ind->rnti = srs_pdu->rnti;
+      srs_toa_vendor_ext_ind->num_ta = nb_antennas_rx;
+      for (int ta_idx = 0; ta_idx < nb_antennas_rx; ta_idx++) {
+        srs_toa_vendor_ext_ind->ta_offset_nsec[ta_idx] = timing_advance_offset_nsec[ta_idx];
+      }
+      break;
+    }
 
     default:
       AssertFatal(1 == 0, "Invalid SRS usage\n");
@@ -1244,7 +1263,7 @@ int phy_procedures_gNB_uespec_RX(PHY_VARS_gNB *gNB, int frame_rx, int slot_rx, N
   UL_INFO->srs_ind.number_of_pdus = n_srs;
   for (int i = 0; i < n_srs; ++i) {
     start_meas(&gNB->rx_srs_stats);
-    handle_srs(now, gNB, &srs[i], &UL_INFO->srs_ind.pdu_list[i]);
+    handle_srs(now, gNB, &srs[i], &UL_INFO->srs_ind.pdu_list[i], &UL_INFO->srs_toa_vendor_ext_ind);
     stop_meas(&gNB->rx_srs_stats);
   }
 
