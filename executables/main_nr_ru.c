@@ -24,6 +24,7 @@
 #include "executables/nr-softmodem.h"
 #include "nr-oru.h"
 #include "openair1/PHY/INIT/nr_phy_init.h"
+#include "openair1/SCHED_NR/sched_nr.h"
 
 pthread_cond_t sync_cond;
 pthread_mutex_t sync_mutex;
@@ -35,6 +36,14 @@ int sf_ahead = 4;
 int emulate_rf = 0;
 
 RAN_CONTEXT_t RC;
+
+extern void kill_NR_RU_proc(int inst);
+extern void set_function_spec_param(RU_t *ru);
+extern void start_NR_RU();
+extern void init_NR_RU(configmodule_interface_t *cfg, char *);
+void fill_rf_config(RU_t *ru, char *rf_config_file);
+void fill_split7_2_config(split7_config_t *split7, const nfapi_nr_config_request_scf_t *config, const NR_DL_FRAME_PARMS *fp);
+
 int64_t uplink_frequency_offset[MAX_NUM_CCs][4];
 
 void nfapi_setmode(nfapi_mode_t nfapi_mode)
@@ -120,14 +129,15 @@ void init_timeshift_rotation(const int ofdm_symbol_size,
 {
   return;
 };
-int beam_index_allocation(bool das,
-                          int fapi_beam_index,
-                          NR_gNB_COMMON *common_vars,
-                          int slot,
-                          int symbols_per_slot,
-                          int bitmap_symbols)
+void beam_index_allocation(uint16_t fapi_beam_index,
+                           int ant,
+                           int num_ports,
+                           int symbols_per_slot,
+                           int slot,
+                           uint16_t bitmap_symbols,
+                           int num_ant_max,
+                           uint16_t **ant_beam_id_list)
 {
-  return 0;
 }
 uint16_t get_first_ant_idx(bool das, uint16_t num_ports_beams, uint16_t beam_id, uint16_t fapi_start_port)
 {
@@ -186,8 +196,18 @@ int main(int argc, char **argv)
   AssertFatal(ret == 0, "Cannot configure oru, check your config file/cmdline");
   ru->numerology = oru.numerology;
   oru_init_frame_parms(&oru);
-  nr_dump_frame_parms(ru->nr_frame_parms);
+  NR_DL_FRAME_PARMS *fp = ru->nr_frame_parms;
+  nr_dump_frame_parms(fp);
+  nr_phy_init_RU(oru.ru);
+  fill_rf_config(ru, ru->rf_config_file);
+  ru->N_TA_offset = set_default_nta_offset(fp->freq_range, fp->samples_per_subframe);
 
+  oru.fronthaul = oru_fh_init(&oru.fh_config);
+  AssertFatal(oru.fronthaul != NULL, "Cannot configure oru fronthaul, check your config file/cmdline");
+
+  threadCreate(&oru.north_read_thread, oru_north_read_thread, (void *)&oru, "north_read_thread", -1, OAI_PRIORITY_RT_MAX);
+  usleep(1000);
+  oru_fh_start(oru.fronthaul);
 
   while (oai_exit == 0)
     sleep(1);
