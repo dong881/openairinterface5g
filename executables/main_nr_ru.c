@@ -117,18 +117,6 @@ struct timespec timespec_sub(struct timespec, struct timespec)
   struct timespec t = {0};
   return t;
 };
-
-void perform_symbol_rotation(const int nsymb, const int numerology_index, double f0, c16_t *symbol_rotation)
-{
-  return;
-}
-void init_timeshift_rotation(const int ofdm_symbol_size,
-                             const int nb_prefix_samples,
-                             const uint ofdm_offset_divisor,
-                             c16_t *timeshift_symbol_rotation)
-{
-  return;
-};
 void beam_index_allocation(uint16_t fapi_beam_index,
                            int ant,
                            int num_ports,
@@ -183,6 +171,7 @@ int main(int argc, char **argv)
   printf("About to Init RU threads\n");
 
   lock_memory_to_ram();
+  load_dftslib();
 
   RC.nb_RU = 1;
   RC.ru = malloc(sizeof(RC.ru));
@@ -198,6 +187,8 @@ int main(int argc, char **argv)
   oru_init_frame_parms(&oru);
   NR_DL_FRAME_PARMS *fp = ru->nr_frame_parms;
   nr_dump_frame_parms(fp);
+  init_symbol_rotation(fp);
+  ru->if_south = LOCAL_RF;
   nr_phy_init_RU(oru.ru);
   fill_rf_config(ru, ru->rf_config_file);
   ru->N_TA_offset = set_default_nta_offset(fp->freq_range, fp->samples_per_subframe);
@@ -216,8 +207,10 @@ int main(int argc, char **argv)
   usleep(1000);
   oru_fh_start(oru.fronthaul);
 
-  while (oai_exit == 0)
+  while (oai_exit == 0) {
+    oru_fh_print_stats(oru.fronthaul);
     sleep(1);
+  }
   // stop threads
 
   kill_NR_RU_proc(0);
