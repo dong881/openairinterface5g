@@ -562,20 +562,23 @@ void* ru_thread_control( void* param )
 					 
 		//if (ru->is_slave == 1) lte_sync_time_init(&ru->frame_parms);
 
-		if (ru->rfdevice.is_init != 1) openair0_device_load(&ru->rfdevice,&ru->openair0_cfg);
-		
-		if (ru->rfdevice.trx_config_func) AssertFatal((ru->rfdevice.trx_config_func(&ru->rfdevice,&ru->openair0_cfg)==0), 
-							      "Failed to configure RF device for RU %d\n",ru->idx);
+    if (ru->rfdevice.is_init != 1)
+      openair0_device_load(&ru->rfdevice, &ru->openair0_cfg);
 
-		if (setup_RU_buffers(ru)!=0) {
-		  printf("Exiting, cannot initialize RU Buffers\n");
-		  exit(-1);
-		}
+    if (ru->rfdevice.trx_config_func)
+      AssertFatal((ru->rfdevice.trx_config_func(&ru->rfdevice, &ru->openair0_cfg) == 0),
+                  "Failed to configure RF device for RU %d\n",
+                  ru->idx);
 
-		// send CONFIG_OK
+    if (setup_RU_buffers(ru) != 0) {
+      printf("Exiting, cannot initialize RU Buffers\n");
+      exit(-1);
+    }
 
-		rru_config_msg.type = RRU_config_ok; 
-		rru_config_msg.len  = sizeof(RRU_CONFIG_msg_t);
+    // send CONFIG_OK
+
+    rru_config_msg.type = RRU_config_ok;
+    rru_config_msg.len  = sizeof(RRU_CONFIG_msg_t);
 		LOG_I(PHY,"Sending CONFIG_OK to RAU %d\n", ru->idx);
 
 		AssertFatal((ru->ifdevice.trx_ctlsend_func(&ru->ifdevice,&rru_config_msg,rru_config_msg.len)!=-1),
