@@ -35,75 +35,31 @@
 //#define DEBUG_MAC_PDU
 //#define DEBUG_DFT_IDFT
 
-//extern int32_t uplink_counter;
-
-static void nr_pusch_codeword_scrambling_uci(uint8_t *in,
-                                             uint32_t size,
-                                             uint32_t Nid,
-                                             uint32_t n_RNTI,
-                                             const uci_on_pusch_bit_type_t *template,
-                                             uint32_t *out)
+static void nr_pusch_codeword_scrambling(uint8_t *in,
+                                         uint32_t size,
+                                         uint32_t Nid,
+                                         uint32_t n_RNTI,
+                                         const uci_on_pusch_bit_type_t *template,
+                                         uint32_t *out)
 {
+  // no UCI on PUSCH -> optimized scrambling
+  if (template == NULL) {
+    nr_codeword_scrambling(in, size, 0, Nid, n_RNTI, out);
+    return;
+  }
+
   uint32_t *seq = gold_cache((n_RNTI << 15) + Nid, (size + 31) / 32);
   uint32_t num_words = (size + 31) / 32;
-
-  // Step 1: Initial general scrambling
-  // First convert unpacked input to bit-packed words
-  uint32_t in_words[num_words];
-  memset(in_words, 0, num_words * sizeof(uint32_t));
+  memset(out, 0, num_words * sizeof(uint32_t));
 
   for (uint32_t i = 0; i < size; i++) {
     uint32_t word_idx = i / 32;
-    uint32_t bit_idx = i % 32;
-    if (in[i] & 1) {
-      in_words[word_idx] |= (1U << bit_idx);
-    }
+    uint32_t bit_idx  = i % 32;
+    uint32_t bit = (in[i] & 1);
+    if (template[i] != BIT_TYPE_PLACEHOLDER)
+      bit ^= (seq[word_idx] >> bit_idx) & 1;
+    out[word_idx] |= (bit << bit_idx);
   }
-
-  for (uint32_t i = 0; i < num_words; i++) {
-    out[i] = in_words[i] ^ seq[i];
-  }
-
-  // According to 38.211 6.3.1.1
-  for (uint32_t i = 0; i < size; i++) {
-    if (template[i] == BIT_TYPE_ACK_ULSCH) {
-      // Step 2: Overwrite/Correct positions for UCI bits including placeholders X, Y when O_ACK <= 2
-      uint32_t pos = i;
-      uint32_t idx = pos / 32;
-      uint32_t b_idx = pos % 32;
-
-      if (in[pos] == NR_PUSCH_y) {
-        // Clear bit
-        out[idx] &= ~(1U << b_idx);
-        if (b_idx > 0) {
-          // Y depends on the final value of the previous bit in the same word.
-          // This previous bit could be an ACK (already corrected) or ULSCH (from initial scramble).
-          out[idx] |= ((out[idx] >> (b_idx - 1)) & 1) << b_idx;
-        } else if (idx > 0) {
-          // Y depends on the last bit of the previous word.
-          out[idx] |= ((out[idx - 1] >> 31) & 1);
-        }
-      } else if (in[pos] == NR_PUSCH_x) {
-        out[idx] |= (1U << b_idx);
-      }
-    }
-  }
-}
-
-void nr_pusch_codeword_scrambling(uint8_t *in,
-                                  uint32_t size,
-                                  uint32_t Nid,
-                                  uint32_t n_RNTI,
-                                  bool uci_on_pusch,
-                                  const uci_on_pusch_bit_type_t *template,
-                                  uint32_t *out)
-{
-  if (uci_on_pusch)
-    // in buffer is in byte-packed format
-    nr_pusch_codeword_scrambling_uci(in, size, Nid, n_RNTI, template, out);
-  else
-    // in buffer is in bit-packed format
-    nr_codeword_scrambling(in, size, 0, Nid, n_RNTI, out);
 }
 
 /*
@@ -882,37 +838,41 @@ static void map_uci_common(struct map_uci_common_arg p)
 }
 
 /*
- * This function maps the HARQ-ACK bits when O_ACK <= 2
+ * Maps HARQ-ACK bits when O_ACK <= 2 (overlapped ACK/ULSCH case).
+ * Marks each reserved bit position as either BIT_TYPE_ACK_ULSCH (real data bit)
+ * or BIT_TYPE_PLACEHOLDER (x/y position), based on its position within the
+ * Qm-bit modulation group:
+ *   A=1: pos 0 is data, pos 1+ are placeholders (y at pos 1, x at pos 2+)
+ *   A=2: pos 0,1 are data, pos 2+ are placeholders (x only)
  */
 static void map_overlapped_ack(uci_on_pusch_bit_type_t *template,
                                uint16_t G_ack,
                                uint8_t l1_c,
-                               uint8_t n_symbols,
+                               const nfapi_nr_ue_pusch_pdu_t *pusch_pdu,
                                uint32_t positions_by_sym[][MAX_UCI_CODED_BITS],
                                const uint32_t *count_by_sym)
 {
+  // First placeholder position within a Qm-bit group:
+  //   A=1: pos 1 (y), pos 2+ (x)
+  //   A=2: pos 2+ (x only, pos 0 and 1 are always real data bits)
+  const int placeholder_start = (pusch_pdu->pusch_uci.harq_ack_bit_length == 1) ? 1 : 2;
   uint32_t ack_bits_marked = 0;
-
-  for (uint8_t sym_iter = l1_c; sym_iter < n_symbols && ack_bits_marked < G_ack; sym_iter++) {
+  for (uint8_t sym_iter = l1_c; sym_iter < pusch_pdu->nr_of_symbols && ack_bits_marked < G_ack; sym_iter++) {
     const uint32_t num_reserved_bits_on_sym = count_by_sym[sym_iter];
-
     if (num_reserved_bits_on_sym > 0) {
       const uint32_t num_ack_remaining = G_ack - ack_bits_marked;
-
-      // This d-factor is calculated for stepping through the list of *reserved bits*.
       const uint32_t d_factor_re = get_d_factor_re(num_ack_remaining, num_reserved_bits_on_sym);
-
       const uint32_t *reserved_indices_on_this_sym = positions_by_sym[sym_iter];
-
       for (uint32_t i = 0; i < num_reserved_bits_on_sym && ack_bits_marked < G_ack; i += d_factor_re) {
         uint32_t pos_to_mark = reserved_indices_on_this_sym[i];
-        template[pos_to_mark] = BIT_TYPE_ACK_ULSCH;
-
+        int bit_in_group = pos_to_mark % pusch_pdu->qam_mod_order;
+        template[pos_to_mark] = (bit_in_group >= placeholder_start) ? BIT_TYPE_PLACEHOLDER : BIT_TYPE_ACK_ULSCH;
         ack_bits_marked++;
       }
     }
   }
 }
+
 
 /*
  * Applies the template to build the final codeword
@@ -937,23 +897,17 @@ static void apply_template_to_codeword(uint8_t *codeword,
   for (uint32_t i = 0; i < codeword_len; i++) {
     switch (template[i]) {
       case BIT_TYPE_ACK:
+      case BIT_TYPE_ACK_ULSCH:
+      case BIT_TYPE_PLACEHOLDER:
         if (G_ack > 0 && ack_idx < G_ack) {
           uint32_t word_idx = ack_idx / 64;
           uint32_t bit_in_word_idx = ack_idx % 64;
           codeword[i] = (cack[word_idx] >> bit_in_word_idx) & 1;
           ack_idx++;
-        }
-        break;
-
-      case BIT_TYPE_ACK_ULSCH:
-        if (G_ack > 0 && ack_idx < G_ack) {
-          codeword[i] = ((const uint8_t *)cack)[ack_idx++];
-          if (G_ulsch > 0 && ulsch_idx < G_ulsch) {
+          if (template[i] != BIT_TYPE_ACK && G_ulsch > 0 && ulsch_idx < G_ulsch)
             ulsch_idx++;
-          }
         }
         break;
-
       case BIT_TYPE_CSI1:
         if (G_csi1 > 0 && csi1_idx < G_csi1) {
           uint32_t word_idx = csi1_idx / 64;
@@ -962,7 +916,6 @@ static void apply_template_to_codeword(uint8_t *codeword,
           csi1_idx++;
         }
         break;
-
       case BIT_TYPE_CSI2:
         if (G_csi2 > 0 && csi2_idx < G_csi2) {
           uint32_t word_idx = csi2_idx / 64;
@@ -971,7 +924,6 @@ static void apply_template_to_codeword(uint8_t *codeword,
           csi2_idx++;
         }
         break;
-
       case BIT_TYPE_ACK_RESERVED:
       case BIT_TYPE_ULSCH:
       default:
@@ -1060,7 +1012,7 @@ static uci_on_pusch_bit_type_t *nr_data_control_mapping(const nfapi_nr_ue_pusch_
   map_uci_common(map_arg);
 
   if (G_ack > 0 && G_ack_rvd > 0) {
-    map_overlapped_ack(template, G_ack, l1_c, n_symbols, positions_by_sym, count_by_sym);
+    map_overlapped_ack(template, G_ack, l1_c, pusch_pdu, positions_by_sym, count_by_sym);
   }
 
   apply_template_to_codeword(codeword, template, codeword_len, ulsch_bits, cack, csi1, csi2, G_ack, G_csi1, G_csi2, G_ulsch);
@@ -1193,7 +1145,6 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
     nr_uci_encoding(pusch_pdu->pusch_uci.harq_payload,
                     pusch_pdu->pusch_uci.harq_ack_bit_length,
                     pucch_pdu->prb_size,
-                    true,
                     rm_info.E_uci_ACK,
                     mod_order,
                     &b_ack[0]);
@@ -1213,7 +1164,6 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
     nr_uci_encoding(pusch_pdu->pusch_uci.csi_payload.part1_payload,
                     pusch_pdu->pusch_uci.csi_payload.p1_bits,
                     pucch_pdu->prb_size,
-                    true,
                     rm_info.E_uci_CSI1,
                     mod_order,
                     &b_csi1[0]);
@@ -1223,7 +1173,6 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
       nr_uci_encoding(pusch_pdu->pusch_uci.csi_payload.part2_payload,
                       pusch_pdu->pusch_uci.csi_payload.p2_bits,
                       pucch_pdu->prb_size,
-                      true,
                       rm_info.E_uci_CSI2,
                       mod_order,
                       &b_csi2[0]);
@@ -1300,7 +1249,6 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
                                available_bits,
                                pusch_pdu->data_scrambling_id,
                                rnti,
-                               uci_present,
                                uci_mapping_template,
                                scrambled_output);
   if (UE->phy_sim_test_buf) {
