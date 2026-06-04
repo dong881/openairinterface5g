@@ -35,6 +35,15 @@
 //#define DEBUG_MAC_PDU
 //#define DEBUG_DFT_IDFT
 
+typedef enum {
+  BIT_TYPE_ULSCH = 0, // Default: UL-SCH data
+  BIT_TYPE_ACK = 1, // HARQ-ACK bit
+  BIT_TYPE_ACK_RESERVED = 2, // Reserved for HARQ-ACK data (punctured)
+  BIT_TYPE_ACK_PLACEHOLDER = 3, // Reserved for HARQ-ACK placeholders (not scrambled)
+  BIT_TYPE_CSI1 = 4, // CSI Part 1 bit
+  BIT_TYPE_CSI2 = 5, // CSI Part 2 bit
+} uci_on_pusch_bit_type_t;
+
 static void nr_pusch_codeword_scrambling(uint8_t *in,
                                          uint32_t size,
                                          uint32_t Nid,
@@ -54,7 +63,7 @@ static void nr_pusch_codeword_scrambling(uint8_t *in,
     uint32_t word_idx = i / 32;
     uint32_t bit_idx  = i % 32;
     uint32_t bit = (in[i / 8] >> (i % 8)) & 1;
-    if (template[i] != BIT_TYPE_PLACEHOLDER)
+    if (template[i] != BIT_TYPE_ACK_PLACEHOLDER)
       bit ^= (seq[word_idx] >> bit_idx) & 1;
     out[word_idx] |= (bit << bit_idx);
   }
@@ -816,11 +825,19 @@ static void map_uci_common(struct map_uci_common_arg p)
 
 /*
  * Maps HARQ-ACK bits when O_ACK <= 2 (overlapped ACK/ULSCH case).
- * Marks each reserved bit position as either BIT_TYPE_ACK_ULSCH (real data bit)
- * or BIT_TYPE_PLACEHOLDER (x/y position), based on its position within the
- * Qm-bit modulation group:
- *   A=1: pos 0 is data, pos 1+ are placeholders (y at pos 1, x at pos 2+)
- *   A=2: pos 0,1 are data, pos 2+ are placeholders (x only)
+ *
+ * The template already has BIT_TYPE_ACK_RESERVED positions marked by map_uci_common,
+ * some of which may have been overwritten by CSI2 mapping.
+ *
+ * This function:
+ * 1. Resets all non-CSI2 reserved positions back to BIT_TYPE_ULSCH
+ * 2. Selects a subset of reserved positions for actual ACK placement,
+ *    marking them as BIT_TYPE_ACK_RESERVED (real ACK bit) or
+ *    BIT_TYPE_ACK_PLACEHOLDER (resolved x/y bit, not scrambled), based
+ *    on their position within the Qm-bit modulation group:
+ *      A=1: pos 0 is real ACK, pos 1+ are placeholders (y at pos 1, x at pos 2+)
+ *      A=2: pos 0,1 are real ACK, pos 2+ are placeholders (x only)
+ *
  */
 static void map_overlapped_ack(uci_on_pusch_bit_type_t *template,
                                uint16_t G_ack,
@@ -829,23 +846,28 @@ static void map_overlapped_ack(uci_on_pusch_bit_type_t *template,
                                uint32_t positions_by_sym[][MAX_UCI_CODED_BITS],
                                const uint32_t *count_by_sym)
 {
-  // First placeholder position within a Qm-bit group:
-  //   A=1: pos 1 (y), pos 2+ (x)
-  //   A=2: pos 2+ (x only, pos 0 and 1 are always real data bits)
   const int placeholder_start = (pusch_pdu->pusch_uci.harq_ack_bit_length == 1) ? 1 : 2;
+  const int Qm = pusch_pdu->qam_mod_order;
   uint32_t ack_bits_marked = 0;
   for (uint8_t sym_iter = l1_c; sym_iter < pusch_pdu->nr_of_symbols && ack_bits_marked < G_ack; sym_iter++) {
     const uint32_t num_reserved_bits_on_sym = count_by_sym[sym_iter];
-    if (num_reserved_bits_on_sym > 0) {
-      const uint32_t num_ack_remaining = G_ack - ack_bits_marked;
-      const uint32_t d_factor_re = get_d_factor_re(num_ack_remaining, num_reserved_bits_on_sym);
-      const uint32_t *reserved_indices_on_this_sym = positions_by_sym[sym_iter];
-      for (uint32_t i = 0; i < num_reserved_bits_on_sym && ack_bits_marked < G_ack; i += d_factor_re) {
-        uint32_t pos_to_mark = reserved_indices_on_this_sym[i];
-        int bit_in_group = pos_to_mark % pusch_pdu->qam_mod_order;
-        template[pos_to_mark] = (bit_in_group >= placeholder_start) ? BIT_TYPE_PLACEHOLDER : BIT_TYPE_ACK_ULSCH;
-        ack_bits_marked++;
-      }
+    if (num_reserved_bits_on_sym == 0)
+      continue;
+    const uint32_t *reserved_indices_on_this_sym = positions_by_sym[sym_iter];
+    // pass 1: reset all non-CSI2 reserved positions to ULSCH
+    for (uint32_t i = 0; i < num_reserved_bits_on_sym; i++) {
+      uint32_t pos = reserved_indices_on_this_sym[i];
+      if (template[pos] != BIT_TYPE_CSI2)
+        template[pos] = BIT_TYPE_ULSCH;
+    }
+    // pass 2: mark selected positions as ACK_RESERVED or PLACEHOLDER
+    const uint32_t num_ack_remaining = G_ack - ack_bits_marked;
+    const uint32_t d_factor_re = get_d_factor_re(num_ack_remaining, num_reserved_bits_on_sym);
+    for (uint32_t i = 0; i < num_reserved_bits_on_sym && ack_bits_marked < G_ack; i += d_factor_re) {
+      uint32_t pos = reserved_indices_on_this_sym[i];
+      int bit_in_group = pos % Qm;
+      template[pos] = (bit_in_group >= placeholder_start) ? BIT_TYPE_ACK_PLACEHOLDER : BIT_TYPE_ACK_RESERVED;
+      ack_bits_marked++;
     }
   }
 }
@@ -876,8 +898,8 @@ static void apply_template_to_codeword(uint8_t *codeword,
   for (uint32_t i = 0; i < codeword_len; i++) {
     switch (template[i]) {
       case BIT_TYPE_ACK:
-      case BIT_TYPE_ACK_ULSCH:
-      case BIT_TYPE_PLACEHOLDER:
+      case BIT_TYPE_ACK_RESERVED:
+      case BIT_TYPE_ACK_PLACEHOLDER:
         if (rm_info->E_uci_ACK > 0 && ack_idx < rm_info->E_uci_ACK) {
           WRITE_BIT(codeword, i, READ_PACKED(cack, ack_idx));
           ack_idx++;
@@ -897,7 +919,6 @@ static void apply_template_to_codeword(uint8_t *codeword,
           csi2_idx++;
         }
         break;
-      case BIT_TYPE_ACK_RESERVED:
       case BIT_TYPE_ULSCH:
       default:
         if (G_ulsch > 0 && ulsch_idx < G_ulsch) {

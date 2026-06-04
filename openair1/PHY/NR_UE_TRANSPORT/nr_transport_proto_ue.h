@@ -15,16 +15,6 @@
 #include "PHY/CODING/nrPolar_tools/nr_polar_psbch_defs.h"
 #include "common/utils/bits.h"
 
-typedef enum {
-  BIT_TYPE_ULSCH = 0, // Default: UL-SCH data
-  BIT_TYPE_ACK = 1, // HARQ-ACK bit
-  BIT_TYPE_ACK_RESERVED = 2, // Reserved for HARQ-ACK (punctured)
-  BIT_TYPE_ACK_ULSCH = 3,
-  BIT_TYPE_CSI1 = 4, // CSI Part 1 bit
-  BIT_TYPE_CSI2 = 5, // CSI Part 2 bit
-  BIT_TYPE_PLACEHOLDER
-} uci_on_pusch_bit_type_t;
-
 // Specifies the data that should be copied to the scope during PDSCH RX
 typedef struct pdsch_scope_req_s {
   bool copy_chanest_to_scope;
