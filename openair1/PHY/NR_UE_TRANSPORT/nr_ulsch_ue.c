@@ -47,15 +47,13 @@ static void nr_pusch_codeword_scrambling(uint8_t *in,
     nr_codeword_scrambling(in, size, 0, Nid, n_RNTI, out);
     return;
   }
-
   uint32_t *seq = gold_cache((n_RNTI << 15) + Nid, (size + 31) / 32);
   uint32_t num_words = (size + 31) / 32;
   memset(out, 0, num_words * sizeof(uint32_t));
-
   for (uint32_t i = 0; i < size; i++) {
     uint32_t word_idx = i / 32;
     uint32_t bit_idx  = i % 32;
-    uint32_t bit = (in[i] & 1);
+    uint32_t bit = (in[i / 8] >> (i % 8)) & 1;
     if (template[i] != BIT_TYPE_PLACEHOLDER)
       bit ^= (seq[word_idx] >> bit_idx) & 1;
     out[word_idx] |= (bit << bit_idx);
@@ -856,6 +854,9 @@ static void map_overlapped_ack(uci_on_pusch_bit_type_t *template,
 /*
  * Applies the template to build the final codeword
  */
+#define WRITE_BIT(cw, i, bit) do { if (bit) (cw)[(i) / 8] |= (1 << ((i) % 8)); } while(0)
+#define READ_PACKED(arr, idx) (((arr)[(idx) / 64] >> ((idx) % 64)) & 1ULL)
+
 static void apply_template_to_codeword(uint8_t *codeword,
                                        const uci_on_pusch_bit_type_t *template,
                                        rate_match_info_uci_t *rm_info,
@@ -870,6 +871,7 @@ static void apply_template_to_codeword(uint8_t *codeword,
   uint32_t ack_idx = 0;
   uint32_t csi1_idx = 0;
   uint32_t csi2_idx = 0;
+  memset(codeword, 0, (codeword_len + 7) / 8);
 
   for (uint32_t i = 0; i < codeword_len; i++) {
     switch (template[i]) {
@@ -877,9 +879,7 @@ static void apply_template_to_codeword(uint8_t *codeword,
       case BIT_TYPE_ACK_ULSCH:
       case BIT_TYPE_PLACEHOLDER:
         if (rm_info->E_uci_ACK > 0 && ack_idx < rm_info->E_uci_ACK) {
-          uint32_t word_idx = ack_idx / 64;
-          uint32_t bit_in_word_idx = ack_idx % 64;
-          codeword[i] = (cack[word_idx] >> bit_in_word_idx) & 1;
+          WRITE_BIT(codeword, i, READ_PACKED(cack, ack_idx));
           ack_idx++;
           if (template[i] != BIT_TYPE_ACK && G_ulsch > 0 && ulsch_idx < G_ulsch)
             ulsch_idx++;
@@ -887,17 +887,13 @@ static void apply_template_to_codeword(uint8_t *codeword,
         break;
       case BIT_TYPE_CSI1:
         if (rm_info->E_uci_CSI1 > 0 && csi1_idx < rm_info->E_uci_CSI1) {
-          uint32_t word_idx = csi1_idx / 64;
-          uint32_t bit_in_word_idx = csi1_idx % 64;
-          codeword[i] = (csi1[word_idx] >> bit_in_word_idx) & 1;
+          WRITE_BIT(codeword, i, READ_PACKED(csi1, csi1_idx));
           csi1_idx++;
         }
         break;
       case BIT_TYPE_CSI2:
         if (rm_info->E_uci_CSI2 > 0 && csi2_idx < rm_info->E_uci_CSI2) {
-          uint32_t word_idx = csi2_idx / 64;
-          uint32_t bit_in_word_idx = csi2_idx % 64;
-          codeword[i] = (csi2[word_idx] >> bit_in_word_idx) & 1;
+          WRITE_BIT(codeword, i, READ_PACKED(csi2, csi2_idx));
           csi2_idx++;
         }
         break;
@@ -905,9 +901,7 @@ static void apply_template_to_codeword(uint8_t *codeword,
       case BIT_TYPE_ULSCH:
       default:
         if (G_ulsch > 0 && ulsch_idx < G_ulsch) {
-          uint32_t byte_idx = ulsch_idx / 8;
-          uint32_t bit_in_byte_idx = ulsch_idx % 8;
-          codeword[i] = (ulsch_bits[byte_idx] >> bit_in_byte_idx) & 1;
+          WRITE_BIT(codeword, i, (ulsch_bits[ulsch_idx/8] >> (ulsch_idx%8)) & 1);
           ulsch_idx++;
         }
         break;
@@ -1152,7 +1146,7 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
   }
 
   if (uci_present) {
-    uint8_t temp_codeword[G_initial_total_pusch_bits];
+    uint8_t temp_codeword[(G_initial_total_pusch_bits + 7) / 8];
     start_meas_nr_ue_phy(UE, UCI_ON_PUSCH_MAPPING);
     nr_data_control_mapping(ulsch_ue,
                             template_buffer,
@@ -1165,7 +1159,7 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
                             b_csi1,
                             b_csi2);
     stop_meas_nr_ue_phy(UE, UCI_ON_PUSCH_MAPPING);
-    memcpy(harq_process_ul_ue->f, temp_codeword, G_initial_total_pusch_bits);
+    memcpy(harq_process_ul_ue->f, temp_codeword, (G_initial_total_pusch_bits + 7) / 8);
     uci_mapping_template = template_buffer;
   }
 
