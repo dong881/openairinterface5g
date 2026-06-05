@@ -42,6 +42,8 @@ typedef enum {
   BIT_TYPE_ACK_PLACEHOLDER = 3, // Reserved for HARQ-ACK placeholders (not scrambled)
   BIT_TYPE_CSI1 = 4, // CSI Part 1 bit
   BIT_TYPE_CSI2 = 5, // CSI Part 2 bit
+  BIT_TYPE_ACK_RESERVED_CSI2,
+  BIT_TYPE_ACK_PLACEHOLDER_CSI2
 } uci_on_pusch_bit_type_t;
 
 static void nr_pusch_codeword_scrambling(uint8_t *in,
@@ -63,7 +65,7 @@ static void nr_pusch_codeword_scrambling(uint8_t *in,
     uint32_t word_idx = i / 32;
     uint32_t bit_idx  = i % 32;
     uint32_t bit = (in[i / 8] >> (i % 8)) & 1;
-    if (template[i] != BIT_TYPE_ACK_PLACEHOLDER)
+    if (template[i] != BIT_TYPE_ACK_PLACEHOLDER && template[i] != BIT_TYPE_ACK_PLACEHOLDER_CSI2)
       bit ^= (seq[word_idx] >> bit_idx) & 1;
     out[word_idx] |= (bit << bit_idx);
   }
@@ -878,7 +880,10 @@ static void map_overlapped_ack(uci_on_pusch_bit_type_t *template,
     for (uint32_t i = 0; i < num_reserved_bits_on_sym && ack_bits_marked < G_ack; i += d_factor_re) {
       uint32_t pos = reserved_indices_on_this_sym[i];
       int bit_in_group = pos % Qm;
-      template[pos] = (bit_in_group >= placeholder_start) ? BIT_TYPE_ACK_PLACEHOLDER : BIT_TYPE_ACK_RESERVED;
+      if (template[pos] == BIT_TYPE_ULSCH) // puncturing ULSCH
+        template[pos] = (bit_in_group >= placeholder_start) ? BIT_TYPE_ACK_PLACEHOLDER : BIT_TYPE_ACK_RESERVED;
+      else  // puncturing CSIp2
+        template[pos] = (bit_in_group >= placeholder_start) ? BIT_TYPE_ACK_PLACEHOLDER_CSI2 : BIT_TYPE_ACK_RESERVED_CSI2;
       ack_bits_marked++;
     }
   }
@@ -910,12 +915,19 @@ static void apply_template_to_codeword(uint8_t *codeword,
   for (uint32_t i = 0; i < codeword_len; i++) {
     switch (template[i]) {
       case BIT_TYPE_ACK:
+      case BIT_TYPE_ACK_RESERVED_CSI2:
+      case BIT_TYPE_ACK_PLACEHOLDER_CSI2:
+        if (rm_info->E_uci_ACK > 0 && ack_idx < rm_info->E_uci_ACK) {
+          WRITE_BIT(codeword, i, READ_PACKED(cack, ack_idx));
+          ack_idx++;
+        }
+        break;
       case BIT_TYPE_ACK_RESERVED:
       case BIT_TYPE_ACK_PLACEHOLDER:
         if (rm_info->E_uci_ACK > 0 && ack_idx < rm_info->E_uci_ACK) {
           WRITE_BIT(codeword, i, READ_PACKED(cack, ack_idx));
           ack_idx++;
-          if (template[i] != BIT_TYPE_ACK && G_ulsch > 0 && ulsch_idx < G_ulsch)
+          if (G_ulsch > 0 && ulsch_idx < G_ulsch)
             ulsch_idx++;
         }
         break;
