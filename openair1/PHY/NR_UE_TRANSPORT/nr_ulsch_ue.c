@@ -638,9 +638,14 @@ static rate_match_info_uci_t calc_rate_match_info_uci(const NR_UE_ULSCH_t *ulsch
   rminfo.O_ack = (pusch_pdu->pusch_uci.harq_ack_bit_length <= 2) ? 2 : pusch_pdu->pusch_uci.harq_ack_bit_length;
   const int nlqm = pusch_pdu->nrOfLayers * pusch_pdu->qam_mod_order; // product of number of layers and modulation order
 
-  // get the number of coded HARQ-ACK symbols and bits, TS 38.212 section 6.3.2.4.1.1
+  // get the number of coded HARQ-ACK symbols and bits, TS 38.212 section 6.3.2.4.1.1 (considering reservetion)
   rminfo.Q_dash_ACK = get_Qd(rminfo.O_ack, beta, alpha, sumKr, s1, s2, 0);
   rminfo.E_uci_ACK = rminfo.Q_dash_ACK * nlqm;
+  // actual number of coded HARQ-ACK bits to place
+  if (pusch_pdu->pusch_uci.harq_ack_bit_length <= 2) {
+    uint16_t Q_dash_ACK_actual = get_Qd(pusch_pdu->pusch_uci.harq_ack_bit_length, beta, alpha, sumKr, s1, s2, 0);
+    rminfo.E_uci_ACK_actual = Q_dash_ACK_actual * nlqm;
+  }
 
   // get beta offset for csi
   const double beta_csi1 = get_beta_offset_csi(pusch_pdu->pusch_uci.beta_offset_csi1);
@@ -849,7 +854,7 @@ static void map_overlapped_ack(uci_on_pusch_bit_type_t *template,
   const int placeholder_start = (pusch_pdu->pusch_uci.harq_ack_bit_length == 1) ? 1 : 2;
   const int Qm = pusch_pdu->qam_mod_order;
   uint32_t ack_bits_marked = 0;
-  for (uint8_t sym_iter = l1_c; sym_iter < pusch_pdu->nr_of_symbols && ack_bits_marked < G_ack; sym_iter++) {
+  for (uint8_t sym_iter = l1_c; sym_iter < pusch_pdu->nr_of_symbols; sym_iter++) {
     const uint32_t num_reserved_bits_on_sym = count_by_sym[sym_iter];
     if (num_reserved_bits_on_sym == 0)
       continue;
@@ -861,7 +866,9 @@ static void map_overlapped_ack(uci_on_pusch_bit_type_t *template,
         template[pos] = BIT_TYPE_ULSCH;
     }
     // pass 2: mark selected positions as ACK_RESERVED or PLACEHOLDER
-    const uint32_t num_ack_remaining = G_ack - ack_bits_marked;
+    const int32_t num_ack_remaining = G_ack - ack_bits_marked;
+    if (num_ack_remaining <= 0)
+      continue;
     const uint32_t d_factor_re = get_d_factor_re(num_ack_remaining, num_reserved_bits_on_sym);
     for (uint32_t i = 0; i < num_reserved_bits_on_sym && ack_bits_marked < G_ack; i += d_factor_re) {
       uint32_t pos = reserved_indices_on_this_sym[i];
@@ -1003,8 +1010,8 @@ static uci_on_pusch_bit_type_t *nr_data_control_mapping(const NR_UE_ULSCH_t *uls
   map_arg.G_uci = rm_info->E_uci_CSI2;
   map_uci_common(map_arg);
 
-  if (G_ack > 0 && rm_info->O_ack == 2) {
-    map_overlapped_ack(template, G_ack, l1_c, pusch_pdu, positions_by_sym, count_by_sym);
+  if (rm_info->O_ack == 2) {
+    map_overlapped_ack(template, rm_info->E_uci_ACK_actual, l1_c, pusch_pdu, positions_by_sym, count_by_sym);
   }
 
   apply_template_to_codeword(codeword, template, rm_info, codeword_len, ulsch_bits, cack, csi1, csi2, G_ulsch);

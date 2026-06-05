@@ -117,7 +117,8 @@ typedef struct {
 
 typedef struct {
   uint16_t Q_dash_ACK; // number of coded HARQ-ACK symbols
-  uint16_t E_uci_ACK; // number of coded HARQ-ACK bits
+  uint16_t E_uci_ACK; // number of coded HARQ-ACK bits (including reserved ones)
+  uint16_t E_uci_ACK_actual; // actual number of coded HARQ-ACK bits
   uint16_t Q_dash_CSI1; // number of coded CSI part 1 symbols
   uint16_t E_uci_CSI1; // number of coded CSI part 1 bits
   uint16_t Q_dash_CSI2; // number of coded CSI part 2 symbols
