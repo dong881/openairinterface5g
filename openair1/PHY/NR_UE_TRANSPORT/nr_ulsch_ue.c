@@ -778,9 +778,6 @@ struct map_uci_common_arg {
 
 static void map_uci_common(struct map_uci_common_arg p)
 {
-  DevAssert((p.resv_ack_count_symb && p.resv_ack_pos_symb && (p.uci_type_to_map == BIT_TYPE_ACK_RESERVED))
-            || (!p.resv_ack_count_symb && !p.resv_ack_pos_symb && (p.uci_type_to_map != BIT_TYPE_ACK_RESERVED)));
-
   uint32_t symbol_start_bit_idx[NR_SYMBOLS_PER_SLOT] = {0};
   for (uint8_t s = 1; s < p.n_symbols; s++) {
     symbol_start_bit_idx[s] = symbol_start_bit_idx[s - 1] + (p.m_ulsch_initial[s - 1] * p.nlqm);
@@ -791,15 +788,15 @@ static void map_uci_common(struct map_uci_common_arg p)
 
   uint32_t total_placed = 0;
   for (uint8_t sym = p.l1_c; sym < p.n_symbols && total_placed < p.G_uci; sym++) {
-    const uint32_t uci_re_on_sym = p.m_uci_current[sym];
-
+    uint32_t uci_re_on_sym = p.m_uci_current[sym];
+    if (p.uci_type_to_map == BIT_TYPE_CSI1 && p.resv_ack_count_symb) // need to remove reserved res
+      uci_re_on_sym -= p.resv_ack_count_symb[sym] / p.nlqm;
     if (uci_re_on_sym <= 0) {
       continue;
     }
 
     const uint32_t remaining_to_place = p.G_uci - total_placed;
     const uint32_t num_re_to_select = ceil((double)remaining_to_place / p.nlqm);
-
     uint32_t d_factor_re = get_d_factor_re(num_re_to_select, uci_re_on_sym);
     uint32_t re_offset = 0;
     uint32_t *cur_sym_resv_ack_pos = p.resv_ack_pos_symb[sym];
@@ -813,17 +810,25 @@ static void map_uci_common(struct map_uci_common_arg p)
         if (total_placed >= p.G_uci) {
           break;
         }
-
         uint32_t bit_offset_in_sym = (re_offset * p.nlqm) + bit_in_re;
         uint32_t cw_idx = symbol_start_bit_idx[sym] + bit_offset_in_sym;
         p.template[cw_idx] = p.uci_type_to_map;
         if (p.uci_type_to_map == BIT_TYPE_ACK_RESERVED) {
           cur_sym_resv_ack_pos[p.resv_ack_count_symb[sym]++] = cw_idx;
         }
-
         total_placed++;
       }
-      re_offset += d_factor_re;
+      if (p.uci_type_to_map == BIT_TYPE_CSI1 && p.resv_ack_pos_symb) {
+        uint32_t prev_re_offset = re_offset;
+        re_offset += d_factor_re;
+        for (uint32_t i = 0; i < p.resv_ack_count_symb[sym] / p.nlqm; i++) {
+          uint32_t resv_re = (p.resv_ack_pos_symb[sym][i * p.nlqm] - symbol_start_bit_idx[sym]) / p.nlqm;
+          if (resv_re > prev_re_offset && resv_re <= re_offset)
+            re_offset++;
+        }
+      } else {
+        re_offset += d_factor_re;
+      }
     }
   }
 }
@@ -1002,8 +1007,8 @@ static uci_on_pusch_bit_type_t *nr_data_control_mapping(const NR_UE_ULSCH_t *uls
   // CSI part 1
   map_arg.uci_type_to_map = BIT_TYPE_CSI1;
   map_arg.G_uci = rm_info->E_uci_CSI1;
-  map_arg.resv_ack_pos_symb = NULL;
-  map_arg.resv_ack_count_symb = NULL;
+  map_arg.resv_ack_pos_symb = positions_by_sym;
+  map_arg.resv_ack_count_symb = count_by_sym;
   map_uci_common(map_arg);
   // CSI part 2
   map_arg.uci_type_to_map = BIT_TYPE_CSI2;
