@@ -1300,6 +1300,81 @@ static uint32_t compute_precoding_information(NR_PUSCH_Config_t *pusch_Config,
   return val;
 }
 
+/**
+ * @brief Searches the provided lookup table for the matching DCI val.
+ */
+static inline int find_dci_val(const dci_port_map_t *table, int size, uint8_t cdm, uint16_t mask, uint8_t len)
+{
+  for (int i = 0; i < size; i++) {
+    if (table[i].cdm_groups == cdm && table[i].port_mask == mask && table[i].num_front_load_symb == len) {
+      return table[i].val;
+    }
+  }
+  return -1;
+}
+
+/**
+ * @brief Dynamically calculates DCI antenna_ports.val based on assigned ports and rank.
+ */
+static int get_dci_antenna_ports_val(uint8_t rank,
+                                     uint16_t dmrs_ports,
+                                     uint8_t cdm,
+                                     int dmrs_type,
+                                     pusch_maxLength_t max_len,
+                                     uint8_t front_load,
+                                     int tp)
+{
+  if (tp == NR_PUSCH_Config__transformPrecoder_disabled) {
+    if (dmrs_type == pusch_dmrs_type1 && max_len == pusch_len1) {
+      if (rank == 1)
+        return find_dci_val(t1_l1_r1, sizeofArray(t1_l1_r1), cdm, dmrs_ports, front_load);
+      if (rank == 2)
+        return find_dci_val(t1_l1_r2, sizeofArray(t1_l1_r2), cdm, dmrs_ports, front_load);
+      if (rank == 3)
+        return find_dci_val(t1_l1_r3, sizeofArray(t1_l1_r3), cdm, dmrs_ports, front_load);
+      if (rank == 4)
+        return find_dci_val(t1_l1_r4, sizeofArray(t1_l1_r4), cdm, dmrs_ports, front_load);
+    }
+    if (dmrs_type == pusch_dmrs_type1 && max_len == pusch_len2) {
+      if (rank == 1)
+        return find_dci_val(t1_l2_r1, sizeofArray(t1_l2_r1), cdm, dmrs_ports, front_load);
+      if (rank == 2)
+        return find_dci_val(t1_l2_r2, sizeofArray(t1_l2_r2), cdm, dmrs_ports, front_load);
+      if (rank == 3)
+        return find_dci_val(t1_l2_r3, sizeofArray(t1_l2_r3), cdm, dmrs_ports, front_load);
+      if (rank == 4)
+        return find_dci_val(t1_l2_r4, sizeofArray(t1_l2_r4), cdm, dmrs_ports, front_load);
+    }
+    if (dmrs_type == pusch_dmrs_type2 && max_len == pusch_len1) {
+      if (rank == 1)
+        return find_dci_val(t2_l1_r1, sizeofArray(t2_l1_r1), cdm, dmrs_ports, front_load);
+      if (rank == 2)
+        return find_dci_val(t2_l1_r2, sizeofArray(t2_l1_r2), cdm, dmrs_ports, front_load);
+      if (rank == 3)
+        return find_dci_val(t2_l1_r3, sizeofArray(t2_l1_r3), cdm, dmrs_ports, front_load);
+      if (rank == 4)
+        return find_dci_val(t2_l1_r4, sizeofArray(t2_l1_r4), cdm, dmrs_ports, front_load);
+    }
+    if (dmrs_type == pusch_dmrs_type2 && max_len == pusch_len2) {
+      if (rank == 1)
+        return find_dci_val(t2_l2_r1, sizeofArray(t2_l2_r1), cdm, dmrs_ports, front_load);
+      if (rank == 2)
+        return find_dci_val(t2_l2_r2, sizeofArray(t2_l2_r2), cdm, dmrs_ports, front_load);
+      if (rank == 3)
+        return find_dci_val(t2_l2_r3, sizeofArray(t2_l2_r3), cdm, dmrs_ports, front_load);
+      if (rank == 4)
+        return find_dci_val(t2_l2_r4, sizeofArray(t2_l2_r4), cdm, dmrs_ports, front_load);
+    }
+  } else {
+    if (max_len == pusch_len1)
+      return find_dci_val(tp_en_l1, sizeofArray(tp_en_l1), cdm, dmrs_ports, front_load);
+    if (max_len == pusch_len2)
+      return find_dci_val(tp_en_l2, sizeofArray(tp_en_l2), cdm, dmrs_ports, front_load);
+  }
+
+  return -1;
+}
+
 void config_uldci(const NR_UE_ServingCell_Info_t *sc_info,
                   const nfapi_nr_pusch_pdu_t *pusch_pdu,
                   dci_pdu_rel15_t *dci_pdu_rel15,
@@ -1360,9 +1435,53 @@ void config_uldci(const NR_UE_ServingCell_Info_t *sc_info,
                                                                                &pusch_pdu->nrOfLayers,
                                                                                tpmi);
 
-      // antenna_ports.val = 0 for transform precoder is disabled, dmrs-Type=1, maxLength=1, Rank=1/2/3/4
       // Antenna Ports
-      dci_pdu_rel15->antenna_ports.val = 0;
+      pusch_maxLength_t pusch_maxLength = pusch_len1;
+      if (pusch_Config != NULL) {
+        struct NR_SetupRelease_DMRS_UplinkConfig *mappingA = ul_bwp->pusch_Config->dmrs_UplinkForPUSCH_MappingTypeA;
+        struct NR_SetupRelease_DMRS_UplinkConfig *mappingB = ul_bwp->pusch_Config->dmrs_UplinkForPUSCH_MappingTypeB;
+        NR_DMRS_UplinkConfig_t *dmrs_cfg = NULL;
+        if (mappingA != NULL && mappingA->present == NR_SetupRelease_DMRS_UplinkConfig_PR_setup) {
+          dmrs_cfg = mappingA->choice.setup;
+        } else if (mappingB != NULL && mappingB->present == NR_SetupRelease_DMRS_UplinkConfig_PR_setup) {
+          dmrs_cfg = mappingB->choice.setup;
+        }
+        if (dmrs_cfg != NULL && dmrs_cfg->maxLength != NULL) {
+          pusch_maxLength = pusch_len2;
+        }
+      }
+
+      // Detect if the scheduled DMRS uses 1 or 2 front-loaded symbols
+      // Consecutive bits signify a double-symbol DMRS
+      uint8_t front_load_symb = 1;
+      for (int i = 0; i < NR_SYMBOLS_PER_SLOT - 1; i++) {
+        if ((pusch_pdu->ul_dmrs_symb_pos >> i) & 1) {
+          if ((pusch_pdu->ul_dmrs_symb_pos >> (i + 1)) & 1) {
+            front_load_symb = 2;
+          }
+          break;
+        }
+      }
+
+      int antenna_ports_val = get_dci_antenna_ports_val(pusch_pdu->nrOfLayers,
+                                                        pusch_pdu->dmrs_ports,
+                                                        pusch_pdu->num_dmrs_cdm_grps_no_data,
+                                                        pusch_pdu->dmrs_config_type,
+                                                        pusch_maxLength,
+                                                        front_load_symb,
+                                                        ul_bwp->transform_precoding);
+      if (antenna_ports_val < 0) {
+        LOG_E(NR_MAC,
+              "No DCI antenna_ports entry for rank=%d ports=0x%04x cdm=%d type=%d len=%d front load symbols %d\n",
+              pusch_pdu->nrOfLayers,
+              pusch_pdu->dmrs_ports,
+              pusch_pdu->num_dmrs_cdm_grps_no_data,
+              pusch_pdu->dmrs_config_type,
+              pusch_maxLength,
+              front_load_symb);
+        antenna_ports_val = 0;
+      }
+      dci_pdu_rel15->antenna_ports.val = (uint32_t)antenna_ports_val;
 
       // DMRS sequence initialization
       dci_pdu_rel15->dmrs_sequence_initialization.val = pusch_pdu->scid;
