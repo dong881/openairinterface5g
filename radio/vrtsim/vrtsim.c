@@ -141,6 +141,7 @@ typedef struct {
   int tx_num_channels;
   int rx_num_channels;
   channel_desc_t *channel_desc[MAX_NUM_UES];
+  cirdb_provider_t *cirdb_providers[MAX_NUM_UES];
   char *taps_socket;
   void *taps_client;
   int peer_tx_ant;
@@ -287,7 +288,8 @@ static void *vrtsim_ipc_thread(void *arg)
     struct timeval tv = {.tv_sec = 0, .tv_usec = 200000}; // 200ms timeout
     int ret = select(vrtsim_state->ipc_listen_fd + 1, &read_fds, NULL, NULL, &tv);
     if (ret < 0) {
-      if (errno == EINTR) continue;
+      if (errno == EINTR)
+        continue;
       break;
     }
     if (ret == 0) {
@@ -646,7 +648,7 @@ static int vrtsim_connect(openair0_device_t *device)
                       ue_sel.want_model_id,
                       u);
 
-          cirdb_connect(u,
+          vrtsim_state->cirdb_providers[u] = cirdb_connect(
                         device->openair0_cfg[0].tx_num_channels,
                         vrtsim_state->ue_conf[u].rx_ant,
                         &ue_sel,
@@ -681,7 +683,7 @@ static int vrtsim_connect(openair0_device_t *device)
         }
         LOG_A(HW, "VRTSIM: Multi-UE channel taps via CIR DB\n");
       } else {
-        cirdb_connect(0, device->openair0_cfg[0].tx_num_channels, vrtsim_state->peer_rx_ant, &sel, &vrtsim_state->channel_desc[0]);
+        vrtsim_state->cirdb_providers[0] = cirdb_connect(device->openair0_cfg[0].tx_num_channels, vrtsim_state->peer_rx_ant, &sel, &vrtsim_state->channel_desc[0]);
         LOG_A(HW, "VRTSIM: channel taps via CIR DB\n");
       }
     } else {
@@ -729,7 +731,12 @@ static int vrtsim_write_with_chanmod(vrtsim_state_t *vrtsim_state,
   if (vrtsim_state->use_cirdb) {
     double seconds = (double)timestamp / vrtsim_state->sample_rate;
     uint64_t elapsed_ns = (uint64_t)(seconds * 1e9 + 0.5);
-    cirdb_update(elapsed_ns);
+    int num_providers = (vrtsim_state->role == ROLE_SERVER && vrtsim_state->num_ues > 1) ? vrtsim_state->num_ues : 1;
+    for (int p = 0; p < num_providers; p++) {
+      if (vrtsim_state->cirdb_providers[p]) {
+        cirdb_update(vrtsim_state->cirdb_providers[p], elapsed_ns);
+      }
+    }
   }
 
   int noise_power_dBFS = get_noise_power_dBFS();
@@ -740,6 +747,9 @@ static int vrtsim_write_with_chanmod(vrtsim_state_t *vrtsim_state,
     num_chan_desc = vrtsim_state->num_ues;
   }
   int rx_antenna_offset = 0;
+  if (vrtsim_state->role == ROLE_CLIENT) {
+    rx_antenna_offset = vrtsim_state->ue_id * vrtsim_state->peer_rx_ant;
+  }
   int nb_tx = nbAnt;
   for (int i = 0; i < num_chan_desc; i++) {
     channel_desc_t *chan_desc = NULL;
@@ -885,7 +895,7 @@ static int vrtsim_write(openair0_device_t *device,
   // We map the antennas in order: first TX stream is mapped to first RX stream and so on.
   if (vrtsim_state->role == ROLE_CLIENT) {
     for (int aatx = 0; aatx < nbAnt && aatx < vrtsim_state->peer_rx_ant; aatx++) {
-      int global_ul_ant = vrtsim_state->ue.tx_offset + aatx;
+      int global_ul_ant = vrtsim_state->ue_id * vrtsim_state->peer_rx_ant + aatx;
       vrtsim_write_internal(vrtsim_state, timestamp, (c16_t *)samplesVoid[aatx], nsamps, global_ul_ant);
     }
     return nsamps;
@@ -1011,7 +1021,12 @@ static void vrtsim_end(openair0_device_t *device)
     abortTpool(&vrtsim_state->tpool);
 #endif
     if (vrtsim_state->use_cirdb) {
-      cirdb_stop();
+      for (int p = 0; p < MAX_NUM_UES; p++) {
+        if (vrtsim_state->cirdb_providers[p]) {
+          cirdb_stop(vrtsim_state->cirdb_providers[p]);
+          vrtsim_state->cirdb_providers[p] = NULL;
+        }
+      }
 #ifdef OAI_VRTSIM_TAPS_CLIENT
     } else if (vrtsim_state->taps_client) {
       taps_client_stop(vrtsim_state->taps_client);
