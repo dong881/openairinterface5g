@@ -915,8 +915,6 @@ static void apply_template_to_codeword(uint8_t *codeword,
   for (uint32_t i = 0; i < codeword_len; i++) {
     switch (template[i]) {
       case BIT_TYPE_ACK:
-      case BIT_TYPE_ACK_RESERVED_CSI2:
-      case BIT_TYPE_ACK_PLACEHOLDER_CSI2:
         if (rm_info->E_uci_ACK > 0 && ack_idx < rm_info->E_uci_ACK) {
           WRITE_BIT(codeword, i, READ_PACKED(cack, ack_idx));
           ack_idx++;
@@ -930,6 +928,16 @@ static void apply_template_to_codeword(uint8_t *codeword,
           if (G_ulsch > 0 && ulsch_idx < G_ulsch)
             ulsch_idx++;
         }
+        break;
+      case BIT_TYPE_ACK_RESERVED_CSI2:
+      case BIT_TYPE_ACK_PLACEHOLDER_CSI2:
+        if (rm_info->E_uci_ACK > 0 && ack_idx < rm_info->E_uci_ACK) {
+          WRITE_BIT(codeword, i, READ_PACKED(cack, ack_idx));
+          ack_idx++;
+        }
+        // advance csi2_idx for punctured CSI2 bits
+        if (rm_info->E_uci_CSI2 > 0 && csi2_idx < rm_info->E_uci_CSI2)
+          csi2_idx++;
         break;
       case BIT_TYPE_CSI1:
         if (rm_info->E_uci_CSI1 > 0 && csi1_idx < rm_info->E_uci_CSI1) {
@@ -946,7 +954,7 @@ static void apply_template_to_codeword(uint8_t *codeword,
       case BIT_TYPE_ULSCH:
       default:
         if (G_ulsch > 0 && ulsch_idx < G_ulsch) {
-          WRITE_BIT(codeword, i, (ulsch_bits[ulsch_idx/8] >> (ulsch_idx%8)) & 1);
+          WRITE_BIT(codeword, i, (ulsch_bits[ulsch_idx / 8] >> (ulsch_idx % 8)) & 1);
           ulsch_idx++;
         }
         break;
