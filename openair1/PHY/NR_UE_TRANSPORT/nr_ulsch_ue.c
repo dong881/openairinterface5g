@@ -49,6 +49,7 @@ typedef enum {
 static void nr_pusch_codeword_scrambling(uint8_t *in,
                                          uint32_t size,
                                          uint32_t Nid,
+                                         uint32_t A,
                                          uint32_t n_RNTI,
                                          const uci_on_pusch_bit_type_t *template,
                                          uint32_t *out)
@@ -67,6 +68,11 @@ static void nr_pusch_codeword_scrambling(uint8_t *in,
     uint32_t bit = (in[i / 8] >> (i % 8)) & 1;
     if (template[i] != BIT_TYPE_ACK_PLACEHOLDER && template[i] != BIT_TYPE_ACK_PLACEHOLDER_CSI2)
       bit ^= (seq[word_idx] >> bit_idx) & 1;
+    else if (A == 1 && (template[i - 1] == BIT_TYPE_ACK_RESERVED || template[i - 1] == BIT_TYPE_ACK_RESERVED_CSI2)) {
+      uint32_t last_word_idx = (i - 1) / 32;
+      uint32_t last_bit_idx  = (i - 1) % 32;
+      bit ^= (seq[last_word_idx] >> last_bit_idx) & 1;
+    }
     out[word_idx] |= (bit << bit_idx);
   }
 }
@@ -1265,6 +1271,7 @@ void nr_ue_ulsch_procedures(PHY_VARS_NR_UE *UE,
   nr_pusch_codeword_scrambling(harq_process_ul_ue->f,
                                available_bits,
                                pusch_pdu->data_scrambling_id,
+                               pusch_pdu->pusch_uci.harq_ack_bit_length,
                                rnti,
                                uci_mapping_template,
                                scrambled_output);
