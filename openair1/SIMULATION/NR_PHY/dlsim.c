@@ -169,11 +169,18 @@ void processSlotTX(void *arg) {}
 
 // needed for some functions
 openair0_config_t openair0_cfg[MAX_CARDS];
-void update_ptrs_config(NR_CellGroupConfig_t *secondaryCellGroup, uint16_t *rbSize, uint8_t *mcsIndex,int8_t *ptrs_arg);
-void update_dmrs_config(NR_CellGroupConfig_t *scg, int8_t *dmrs_arg);
+void update_ptrs_config(NR_BWP_Downlink_t *bwp, int *rbSize, uint8_t *mcsIndex,int8_t *ptrs_arg);
+void update_dmrs_config(NR_BWP_Downlink_t *bwp, int8_t *dmrs_arg);
 
 /* specific dlsim DL preprocessor: uses rbStart/rbSize/mcs/nrOfLayers from command line of dlsim */
-int g_mcsIndex = -1, g_mcsTableIdx = 0, g_rbStart = -1, g_rbSize = -1, g_nrOfLayers = 1, g_pmi = 0;
+int g_mcsIndex = -1, g_mcsTableIdx = 0, g_rbStart = -1, g_rbSize = -1, g_nrOfLayers = 1, g_pmi = 0, g_nb_rb_ranges = 0, N_RB_DL = 106;
+nr_pdsch_allocation_type_t alloc_type = PDSCH_TYPE1;
+#define MAX_RB_RANGES 16
+typedef struct {
+  int start;
+  int size;
+} rb_range_t;
+rb_range_t g_rb_ranges[MAX_RB_RANGES];
 
 void nr_dlsim_preprocessor(gNB_MAC_INST *nr_mac, post_process_pdsch_t *pp_pdsch)
 {
@@ -210,12 +217,25 @@ void nr_dlsim_preprocessor(gNB_MAC_INST *nr_mac, post_process_pdsch_t *pp_pdsch)
   NR_sched_pdsch_t sched_pdsch = {
       .rbStart = g_rbStart,
       .rbSize = g_rbSize,
-      .alloc_type = PDSCH_TYPE1,
+      .alloc_type = alloc_type,
       .bwp_info = get_pdsch_bwp_start_size(nr_mac, UE_info),
       .mcs = g_mcsIndex,
       .nrOfLayers = g_nrOfLayers,
       .pm_index = g_pmi,
   };
+
+  if (alloc_type == PDSCH_TYPE0) {
+    sched_pdsch.rbSize = 0;
+    memset(sched_pdsch.rbBitmap, 0, sizeof(sched_pdsch.rbBitmap));
+    for (int r = 0; r < g_nb_rb_ranges; r++) {
+      for (int rb = g_rb_ranges[r].start; rb < g_rb_ranges[r].start + g_rb_ranges[r].size; rb++) {
+        AssertFatal(rb < N_RB_DL, "RB index %d exceeds BWP size %d\n", rb, N_RB_DL);
+        sched_pdsch.rbBitmap[rb / 8] |= (1 << (rb % 8));
+        sched_pdsch.rbSize++;
+      }
+    }
+  }
+
   /* the following might override the table that is mandated by RRC
    * configuration */
   current_BWP->mcsTableIdx = g_mcsTableIdx;
@@ -239,13 +259,13 @@ void nr_dlsim_preprocessor(gNB_MAC_INST *nr_mac, post_process_pdsch_t *pp_pdsch)
   sched_pdsch.Qm = nr_get_Qm_dl(sched_pdsch.mcs, current_BWP->mcsTableIdx);
   sched_pdsch.R = nr_get_code_rate_dl(sched_pdsch.mcs, current_BWP->mcsTableIdx);
   sched_pdsch.tb_size = nr_compute_tbs(sched_pdsch.Qm,
-                                        sched_pdsch.R,
-                                        sched_pdsch.rbSize,
-                                        sched_pdsch.tda_info.nrOfSymbols,
-                                        sched_pdsch.dmrs_parms.N_PRB_DMRS * sched_pdsch.dmrs_parms.N_DMRS_SLOT,
-                                        0 /* N_PRB_oh, 0 for initialBWP */,
-                                        0 /* tb_scaling */,
-                                        sched_pdsch.nrOfLayers) >> 3;
+                                       sched_pdsch.R,
+                                       sched_pdsch.rbSize,
+                                       sched_pdsch.tda_info.nrOfSymbols,
+                                       sched_pdsch.dmrs_parms.N_PRB_DMRS * sched_pdsch.dmrs_parms.N_DMRS_SLOT,
+                                       0 /* N_PRB_oh, 0 for initialBWP */,
+                                       0 /* tb_scaling */,
+                                       sched_pdsch.nrOfLayers) >> 3;
 
   const nr_pdsch_AntennaPorts_t *p = &nr_mac->radio_config.pdsch_AntennaPorts;
   sched_pdsch.ant_port_idx.numSpatialStreamIndices = p->XP * p->N1 * p->N2;
@@ -367,7 +387,7 @@ int main(int argc, char **argv)
 
   //double pbch_sinr;
   //int pbch_tx_ant;
-  int N_RB_DL=106,mu=1;
+  int mu = 1;
 
   //unsigned char frame_type = 0;
 
@@ -395,7 +415,6 @@ int main(int argc, char **argv)
   uint16_t pdu_bit_map = 0x0;
   uint16_t dlPtrsSymPos = 0;
   uint16_t ptrsSymbPerSlot = 0;
-  uint16_t rbSize = 106;
   uint8_t  mcsIndex = 9;
   uint8_t  dlsch_threads = 0;
   int chest_type[2] = {0};
@@ -423,7 +442,7 @@ int main(int argc, char **argv)
   void *d_channel_coeffs_gpu = NULL;
 #endif
 
-  while ((c = getopt(argc, argv, "--:O:f:hA:p:g:i:n:s:S:t:v:x:y:z:o:H:M:N:F:GR:d:PI:L:a:b:e:m:w:T:U:q:X:Y:Z:Q:E")) != -1) {
+  while ((c = getopt(argc, argv, "--:O:f:hA:p:g:i:n:s:S:t:v:x:y:z:o:H:M:N:F:GR:d:D:PI:L:a:b:e:m:w:T:U:q:X:Y:Z:Q:E")) != -1) {
     /* ignore long options starting with '--', option '-O' and their arguments that are handled by configmodule */
     /* with this opstring getopt returns 1 for non-option arguments, refer to 'man 3 getopt' */
     if (c == 1 || c == '-' || c == 'O')
@@ -529,6 +548,22 @@ int main(int argc, char **argv)
 
     case 'R':
       N_RB_DL = atoi(optarg);
+      break;
+
+    case 'D':
+      alloc_type = PDSCH_TYPE0;
+      char *s = strtok(optarg, ",");
+      int i = 0;
+      while (s) {
+        AssertFatal(i < MAX_RB_RANGES, "Too many RB ranges, max is %d\n", MAX_RB_RANGES);
+        if (sscanf(s, "%d:%d", &g_rb_ranges[i].start, &g_rb_ranges[i].size) != 2) {
+          printf("Invalid RB range format in '%s', expected start:size\n", s);
+          exit(-1);
+        }
+        i++;
+        s = strtok(NULL, ",");
+      }
+      g_nb_rb_ranges = i;
       break;
 
     case 'F':
@@ -817,14 +852,22 @@ int main(int argc, char **argv)
   int ssb_index = 0;
   NR_CellGroupConfig_t *secondaryCellGroup = get_default_secondaryCellGroup(scc, UE_Capability_nr, 0, 1, &conf, uid, ssb_index);
   secondaryCellGroup->spCellConfig->reconfigurationWithSync = get_reconfiguration_with_sync(rnti, uid, scc, frame);
+  NR_BWP_Downlink_t *bwp = secondaryCellGroup->spCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList->list.array[0];
+
+  if (alloc_type == PDSCH_TYPE0) {
+    bwp->bwp_Dedicated->pdsch_Config->choice.setup->resourceAllocation = NR_PDSCH_Config__resourceAllocation_resourceAllocationType0;
+    g_rbSize = 0;
+    for (int r = 0; r < g_nb_rb_ranges; r++)
+      g_rbSize += g_rb_ranges[r].size;
+  }
 
   /* -U option modify DMRS */
   if(modify_dmrs) {
-    update_dmrs_config(secondaryCellGroup, dmrs_arg);
+    update_dmrs_config(bwp, dmrs_arg);
   }
   /* -T option enable PTRS */
   if(enable_ptrs) {
-    update_ptrs_config(secondaryCellGroup, &rbSize, &mcsIndex, ptrs_arg);
+    update_ptrs_config(bwp, &g_rbSize, &mcsIndex, ptrs_arg);
   }
 
 
@@ -1111,7 +1154,7 @@ int main(int argc, char **argv)
                             1<<pdsch_pdu_rel15->PTRSTimeDensity,
                             pdsch_pdu_rel15->dlDmrsSymbPos);
           ptrsSymbPerSlot = get_ptrs_symbols_in_slot(dlPtrsSymPos, pdsch_pdu_rel15->StartSymbolIndex, pdsch_pdu_rel15->NrOfSymbols);
-          ptrsRePerSymb = ((pdsch_pdu_rel15->rbSize + pdsch_pdu_rel15->PTRSFreqDensity - 1) / pdsch_pdu_rel15->PTRSFreqDensity);
+          ptrsRePerSymb = ((g_rbSize + pdsch_pdu_rel15->PTRSFreqDensity - 1) / pdsch_pdu_rel15->PTRSFreqDensity);
           LOG_D(PHY,"[DLSIM] PTRS Symbols in a slot: %2u, RE per Symbol: %3u, RE in a slot %4d\n", ptrsSymbPerSlot, ptrsRePerSymb, ptrsSymbPerSlot * ptrsRePerSymb);
         }
 
@@ -1204,8 +1247,7 @@ int main(int argc, char **argv)
         double ts = 1.0/(frame_parms->subcarrier_spacing * frame_parms->ofdm_symbol_size);
 
         // Estimate noise power from the transmitter level and SNR
-        double sigma2 =
-            compute_noise_variance(txlev_sum, UE->frame_parms.ofdm_symbol_size, pdsch_pdu_rel15->rbSize, 1, SNR, n_trials);
+        double sigma2 = compute_noise_variance(txlev_sum, UE->frame_parms.ofdm_symbol_size, g_rbSize, 1, SNR, n_trials);
         const int padding_len = gNB2UE->channel_length - 1;
         const int padded_slot_length = slot_length + padding_len;
         float *h_tx_ptr = (float *)h_tx_sig_pinned;
@@ -1578,9 +1620,8 @@ int main(int argc, char **argv)
 }
 
 
-void update_ptrs_config(NR_CellGroupConfig_t *secondaryCellGroup, uint16_t *rbSize, uint8_t *mcsIndex, int8_t *ptrs_arg)
+void update_ptrs_config(NR_BWP_Downlink_t *bwp, int *rbSize, uint8_t *mcsIndex, int8_t *ptrs_arg)
 {
-  NR_BWP_Downlink_t *bwp=secondaryCellGroup->spCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList->list.array[0];
   long ptrsFreqDenst[] = {25, 115};
   long ptrsTimeDenst[] = {2, 4, 10};
 
@@ -1617,7 +1658,7 @@ void update_ptrs_config(NR_CellGroupConfig_t *secondaryCellGroup, uint16_t *rbSi
   rrc_config_dl_ptrs_params(bwp, ptrsFreqDenst, ptrsTimeDenst, &epre_Ratio, &reOffset);
 }
 
-void update_dmrs_config(NR_CellGroupConfig_t *scg, int8_t* dmrs_arg)
+void update_dmrs_config(NR_BWP_Downlink_t *bwp, int8_t* dmrs_arg)
 {
   int8_t  mapping_type = typeA;//default value
   int8_t  add_pos = pdsch_dmrs_pos0;//default value
@@ -1645,8 +1686,6 @@ void update_dmrs_config(NR_CellGroupConfig_t *scg, int8_t* dmrs_arg)
   } else if(dmrs_arg[2] == 2) {
     dmrs_config_type = NFAPI_NR_DMRS_TYPE2;
   }
-
-  NR_BWP_Downlink_t *bwp = scg->spCellConfig->spCellConfigDedicated->downlinkBWP_ToAddModList->list.array[0];
 
   AssertFatal((bwp->bwp_Dedicated->pdsch_Config != NULL && bwp->bwp_Dedicated->pdsch_Config->choice.setup != NULL), "Base RRC reconfig structures are not allocated.\n");
 

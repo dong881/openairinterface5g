@@ -2984,8 +2984,10 @@ uint16_t nr_dci_size(const NR_UE_DL_BWP_t *DL_BWP,
         dci_pdu->bwp_indicator.nbits = 2;
       size += dci_pdu->bwp_indicator.nbits;
       // Freq domain assignment
-      if (pdsch_Config) rbg_size_config = pdsch_Config->rbg_Size;
-      else rbg_size_config = 0;
+      if (pdsch_Config)
+        rbg_size_config = pdsch_Config->rbg_Size;
+      else
+        rbg_size_config = 0;
       
       numRBG = getNRBG(DL_BWP->BWPSize, DL_BWP->BWPStart, rbg_size_config);
       if (pdsch_Config && pdsch_Config->resourceAllocation == 0)

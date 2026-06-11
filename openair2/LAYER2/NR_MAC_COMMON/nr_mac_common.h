@@ -306,5 +306,5 @@ int nr_get_prach_or_ul_mu(const NR_MsgA_ConfigCommon_r16_t *msgacc, const NR_RAC
 int get_delta_for_k2(int mu);
 
 int get_j_for_k2(int mu);
-
+uint8_t getNRBG(uint16_t bwp_size, uint16_t bwp_start, long rbg_size_config);
 #endif

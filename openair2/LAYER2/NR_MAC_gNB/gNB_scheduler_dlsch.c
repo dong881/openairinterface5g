@@ -1345,11 +1345,6 @@ void post_process_dlsch(gNB_MAC_INST *nr_mac,
                                                        0,
                                                        false);
 
-  NR_PDSCH_Config_t *pdsch_Config = current_BWP->pdsch_Config;
-  AssertFatal(
-      pdsch_Config == NULL || pdsch_Config->resourceAllocation == NR_PDSCH_Config__resourceAllocation_resourceAllocationType1,
-      "Only frequency resource allocation type 1 is currently supported\n");
-
   LOG_D(NR_MAC,
         "%4d.%2d DCI type 1 payload: freq_alloc %d (%d,%d,%d), "
         "nrOfLayers %d, time_alloc %d, vrb to prb %d, mcs %d tb_scaling %d ndi %d rv %d tpc %d ti %d\n",

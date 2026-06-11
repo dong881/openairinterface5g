@@ -918,6 +918,48 @@ nfapi_nr_dl_dci_pdu_t *prepare_dci_pdu(nfapi_nr_dl_tti_pdcch_pdu_rel15_t *pdcch_
   return dci_pdu;
 }
 
+// See Section 5.1.2.2.1 of 38.214
+static uint32_t bitmap_to_rbg_allocation(const uint8_t *rbBitmap, const NR_UE_DL_BWP_t *dl_BWP)
+{
+  AssertFatal(dl_BWP && dl_BWP->pdsch_Config, "DL BWP and PDSCH_config must be configured for Type0 PDSCH allocation\n");
+  int N_RBG = getNRBG(dl_BWP->BWPSize, dl_BWP->BWPStart, dl_BWP->pdsch_Config->rbg_Size);
+  int P = getRBGSize(dl_BWP->BWPSize, dl_BWP->pdsch_Config->rbg_Size);
+  uint32_t rbg_bitmap = 0;
+  for (int i = 0; i < N_RBG; i++) {
+    // compute start and size of this RBG
+    // LSB of byte 0 of rbBitmap represents VRB 0 per SCF document (assuming it means CRB0)
+    int rbg_start, rbg_sz;
+    if (i == 0) {
+      rbg_start = dl_BWP->BWPStart;
+      rbg_sz = P - (dl_BWP->BWPStart % P);
+    } else if (i == N_RBG - 1) {
+      rbg_start = dl_BWP->BWPStart + P - (dl_BWP->BWPStart % P) + (i - 1) * P;
+      int tmp = (dl_BWP->BWPStart + dl_BWP->BWPSize) % P;
+      rbg_sz = tmp ? tmp : P;
+    } else {
+      rbg_start = dl_BWP->BWPStart + P - (dl_BWP->BWPStart % P) + (i - 1) * P;
+      rbg_sz = P;
+    }
+    // check all RBs in this RBG are either all set or all clear
+    int first_rb_set = (rbBitmap[rbg_start / 8] >> (rbg_start % 8)) & 1;
+    for (int rb = rbg_start + 1; rb < rbg_start + rbg_sz; rb++) {
+      int rb_set = (rbBitmap[rb / 8] >> (rb % 8)) & 1;
+      AssertFatal(rb_set == first_rb_set,
+                 "RB bitmap is not compatible with RBG size %d: RBG %d is partially allocated (PRB %d differs from RB start %d)\n",
+                  P,
+                  i,
+                  rb,
+                  rbg_start);
+    }
+    int allocated = first_rb_set;
+    // The order of RBG bitmap is such that RBG 0 is mapped to MSB
+    if (allocated)
+      rbg_bitmap |= (1 << (N_RBG - 1 - i));
+  }
+  return rbg_bitmap;
+}
+
+
 dci_pdu_rel15_t prepare_dci_dl_payload(const gNB_MAC_INST *gNB_mac,
                                        const NR_UE_info_t *UE,
                                        nr_rnti_type_t rnti_type,
@@ -946,7 +988,10 @@ dci_pdu_rel15_t prepare_dci_dl_payload(const gNB_MAC_INST *gNB_mac,
     else
       riv_bwp = UE->sc_info.initial_dl_BWPSize;
   }
-  dci_payload.frequency_domain_assignment.val = PRBalloc_to_locationandbandwidth0(pdsch_pdu->rbSize, pdsch_pdu->rbStart, riv_bwp);
+  if (sched_pdsch->alloc_type == PDSCH_TYPE1)
+    dci_payload.frequency_domain_assignment.val = PRBalloc_to_locationandbandwidth0(pdsch_pdu->rbSize, pdsch_pdu->rbStart, riv_bwp);
+  else
+    dci_payload.frequency_domain_assignment.val = bitmap_to_rbg_allocation(sched_pdsch->rbBitmap, dl_BWP);
   if (rnti_type == TYPE_SI_RNTI_) {
     dci_payload.system_info_indicator = !is_sib1;
     return dci_payload;
