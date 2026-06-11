@@ -10,6 +10,7 @@
 #include "openair3/UTILS/conversions.h"
 #include "nrppa_gNB_measurement_information_transfer.h"
 #include "nrppa_gNB_location_information_transfer.h"
+#include "nrppa_utils.h"
 
 static void decode_srs_config(const NRPPA_SRSConfig_t *in_config, nrppa_srs_config_t *out_config)
 {
@@ -682,21 +683,6 @@ void decode_srs_carrier_list(nrppa_srs_carrier_list_t *out_list, const NRPPA_SRS
   }
 }
 
-void free_measurement_request(nrppa_measurement_req_t *msg)
-{
-  free(msg->trp_measurement_request_list.trp_measurement_request_item);
-  if (msg->measurement_quantities.measurement_quantities_item) {
-    free(msg->measurement_quantities.measurement_quantities_item);
-  }
-
-  /* SRS Configuration (O) */
-  if (msg->srs_configuration) {
-    nrppa_srs_carrier_list_t *srs_carrier_list = &msg->srs_configuration->srs_carrier_list;
-    free_srs_carrier_list(srs_carrier_list);
-    free(msg->srs_configuration);
-  }
-}
-
 static NRPPA_TrpMeasurementResult_t encode_measurement_results(nrppa_measurement_result_t *in_result)
 {
   NRPPA_TrpMeasurementResult_t out_result = {0};
@@ -844,31 +830,6 @@ NRPPA_TRP_MeasurementResponseList_t encode_trp_measurement_reponse_list(nrppa_me
   }
 
   return out_list;
-}
-
-void free_measurement_resp(nrppa_measurement_resp_t *msg)
-{
-  if (msg->measurement_response_list) {
-    nrppa_measurement_response_list_t *list = msg->measurement_response_list;
-    uint32_t meas_resp_list_len = list->measurement_response_list_length;
-    for (int i = 0; i < meas_resp_list_len; i++) {
-      nrppa_measurement_response_item_t *meas_response_item = &list->measurement_response_item[i];
-      nrppa_measurement_result_t *MeasurementResult = &meas_response_item->measurement_result;
-      uint32_t meas_result_length = MeasurementResult->measurement_result_item_length;
-      for (int j = 0; j < meas_result_length; j++) {
-        nrppa_measurement_result_item_t *item = &MeasurementResult->measurement_result_item[j];
-        nrppa_measured_results_value_t *measuredResultsValue = &item->measured_results_value;
-        if (measuredResultsValue->present == NRPPA_MEASURED_RESULTS_VALUE_PR_UL_ANGLEOFARRIVAL) {
-          if (measuredResultsValue->choice.ul_angle_of_arrival.zenith_aoa) {
-            free(measuredResultsValue->choice.ul_angle_of_arrival.zenith_aoa);
-          }
-        }
-      }
-      free(MeasurementResult->measurement_result_item);
-    }
-    free(msg->measurement_response_list->measurement_response_item);
-    free(msg->measurement_response_list);
-  }
 }
 
 int nrppa_gNB_handle_measurement_request(nrppa_gnb_ue_info_t *nrppa_msg_info, const NRPPA_NRPPA_PDU_t *pdu)
@@ -1038,7 +999,7 @@ int nrppa_gNB_measurement_response(instance_t instance, MessageDef *msg_p)
 
   if (ue_info->gNB_ue_ngap_id != 0 && ue_info->amf_ue_ngap_id != 0) {
     LOG_E(NRPPA, "Illegal gNB_ue_ngap_id %d and amf_ue_ngap_id %ld\n", ue_info->gNB_ue_ngap_id, ue_info->amf_ue_ngap_id);
-    free_measurement_resp(resp);
+    free_nrppa_measurement_resp(resp);
     nrppa_free_ue_context(ue_info);
     return -1;
   }
@@ -1091,7 +1052,7 @@ int nrppa_gNB_measurement_response(instance_t instance, MessageDef *msg_p)
     }
   }
 
-  free_measurement_resp(resp);
+  free_nrppa_measurement_resp(resp);
 
   LOG_I(NRPPA, "Calling encoder for Measurement Response \n");
 

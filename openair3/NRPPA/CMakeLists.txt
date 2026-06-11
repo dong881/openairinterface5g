@@ -8,6 +8,7 @@ add_library(nrppa
   nrppa_gNB_handlers.c
   nrppa_gNB_decoder.c
   nrppa_gNB_ue_context.c
+  nrppa_utils.c
   nrppa_gNB_location_information_transfer.c
   nrppa_gNB_encoder.c
   nrppa_gNB_measurement_information_transfer.c

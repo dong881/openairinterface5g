@@ -16,6 +16,7 @@
 #include "executables/nr-uesoftmodem.h"
 #include "openair3/NRPPA/nrppa_gNB_location_information_transfer.c"
 #include "openair3/NRPPA/nrppa_gNB_measurement_information_transfer.h"
+#include "openair3/NRPPA/nrppa_utils.h"
 
 RAN_CONTEXT_t RC;
 THREAD_STRUCT thread_struct;
@@ -623,7 +624,7 @@ void *rrc_gnb_task(void *args_p)
         NRPPA_POSITIONING_ACTIVATION_RESP(msg_p_resp).transaction_id = req->transaction_id;
         LOG_I(NR_RRC, "Sending NRPPA_POSITIONING_ACTIVATION_RESP to TASK_NRPPA\n");
         itti_send_msg_to_task(TASK_NRPPA, 0, msg_p_resp);
-        free_positioning_activation_request(req);
+        free_nrppa_positioning_activation_request(req);
         break;
       case NRPPA_MEASUREMENT_REQ:
         nrppa_measurement_req_t *m_req = &NRPPA_MEASUREMENT_REQ(msg_p);
@@ -632,7 +633,7 @@ void *rrc_gnb_task(void *args_p)
         NRPPA_MEASUREMENT_RESP(msg_p_resp) = fill_measurement_response(m_req->transaction_id, m_req->lmf_measurement_id);
         LOG_I(NR_RRC, "Sending NRPPA_MEASUREMENT_RESP to TASK_NRPPA\n");
         itti_send_msg_to_task(TASK_NRPPA, 0, msg_p_resp);
-        free_measurement_request(m_req);
+        free_nrppa_measurement_request(m_req);
         break;
       default:
         LOG_E(NR_RRC, "[gNB %ld] Received unexpected message %s\n", instance, msg_name_p);
