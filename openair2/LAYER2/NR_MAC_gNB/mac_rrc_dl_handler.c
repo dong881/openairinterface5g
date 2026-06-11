@@ -22,6 +22,10 @@
 
 #include "uper_decoder.h"
 #include "uper_encoder.h"
+#include "openair1/PHY/defs_nr_common.h"
+#include "openair1/PHY/defs_gNB.h"
+#include "openair3/NRPPA/nrppa_gNB_config.h"
+#include "openair2/F1AP/lib/f1ap_positioning.h"
 
 // Standarized 5QI values and Default Priority levels as mentioned in 3GPP TS 23.501 Table 5.7.4-1
 const uint64_t qos_fiveqi[26] = {1, 2, 3, 4, 65, 66, 67, 71, 72, 73, 74, 76, 5, 6, 7, 8, 9, 69, 70, 79, 80, 82, 83, 84, 85, 86};
@@ -1125,4 +1129,42 @@ void f1_paging(const f1ap_paging_t *paging)
 
   LOG_I(MAC, "Paging transfer: ue_identity_index=%u, 5G-S-TMSI=0x%012lu\n", paging->ue_identity_index_value, fiveg_s_tmsi);
   nr_mac_pcch_enqueue(module_id, fiveg_s_tmsi, ue_id);
+}
+
+void trp_information_request(const f1ap_trp_information_req_t *req)
+{
+  positioning_config_t positioning_config = RCconfig_nr_positioning();
+  uint8_t NumTRPs = positioning_config.num_trp;
+  f1ap_trp_information_resp_t resp = {0};
+  gNB_MAC_INST *mac = RC.nrmac[0];
+
+  resp.transaction_id = req->transaction_id;
+  // Check if the TRP_ID matches with the list sent in the trp information request
+  if (req->has_trp_list) {
+    uint8_t trp_resp_len = 0;
+    uint32_t trp_list_length = req->trp_list.trp_list_length;
+    DevAssert(trp_list_length > 0);
+    resp.trp_information_list.trp_information_item =
+        calloc_or_fail(trp_list_length, sizeof(*resp.trp_information_list.trp_information_item));
+    for (int i = 0; i < trp_list_length; i++) {
+      for (int j = 0; j < NumTRPs; j++) {
+        if (positioning_config.trps[j].id == req->trp_list.trp_list_item[i].trp_id) {
+          resp.trp_information_list.trp_information_item[trp_resp_len].trp_id = req->trp_list.trp_list_item[i].trp_id;
+          trp_resp_len++;
+        }
+      }
+    }
+    resp.trp_information_list.trp_information_item_length = trp_resp_len;
+  } else {
+    resp.trp_information_list.trp_information_item =
+        calloc_or_fail(NumTRPs, sizeof(*resp.trp_information_list.trp_information_item));
+    for (int i = 0; i < NumTRPs; i++) {
+      f1ap_trp_information_t *trp_info_item = &resp.trp_information_list.trp_information_item[i];
+      trp_info_item->trp_id = positioning_config.trps[i].id;
+      create_trp_info_item(req, trp_info_item, &positioning_config, i);
+    }
+    resp.trp_information_list.trp_information_item_length = NumTRPs;
+  }
+  mac->mac_rrc.trp_information_response(&resp);
+  free_trp_information_resp(&resp);
 }

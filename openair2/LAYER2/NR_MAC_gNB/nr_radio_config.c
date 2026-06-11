@@ -4443,3 +4443,93 @@ int encode_measgap_config(const measgap_config_t *c, uint8_t *buf)
   ASN_STRUCT_FREE(asn_DEF_NR_MeasGapConfig, measGapConfig);
   return (int)((enc_rval_mgc.encoded + 7) >> 3);
 }
+
+void create_trp_info_item(const f1ap_trp_information_req_t *req,
+                          f1ap_trp_information_t *trp_info_item,
+                          positioning_config_t *positioning_config,
+                          int trp_idx)
+{
+  gNB_MAC_INST *mac = RC.nrmac[0];
+  const f1ap_setup_req_t *setup_req = mac->f1_config.setup_req;
+  const f1ap_served_cell_info_t *du_cell = &setup_req->cell[0].info;
+  const f1ap_trp_information_type_list_t *req_list = &req->trp_information_type_list;
+  uint8_t trp_info_type_len = req_list->trp_information_type_list_length;
+  DevAssert(trp_info_type_len > 0);
+
+  f1ap_trp_information_type_response_list_t *resp_list = &trp_info_item->trp_information_type_response_list;
+  resp_list->trp_information_type_response_item_length = trp_info_type_len;
+  resp_list->trp_information_type_response_item =
+      calloc_or_fail(trp_info_type_len, sizeof(*resp_list->trp_information_type_response_item));
+
+  for (int i = 0; i < trp_info_type_len; i++) {
+    f1ap_trp_information_type_response_item_t *trp_info_type_resp_item = &resp_list->trp_information_type_response_item[i];
+    switch (req_list->trp_information_type_item[i]) {
+      case F1AP_TRP_INFORMATION_TYPE_ITEM_NR_PCI:
+        trp_info_type_resp_item->present = F1AP_TRP_INFORMATION_TYPE_RESPONSE_ITEM_PR_PCI_NR;
+        trp_info_type_resp_item->choice.pci_nr = du_cell->nr_pci;
+        break;
+      case F1AP_TRP_INFORMATION_TYPE_ITEM_NG_RAN_CGI:
+        trp_info_type_resp_item->present = F1AP_TRP_INFORMATION_TYPE_RESPONSE_ITEM_PR_NG_RAN_CGI;
+        trp_info_type_resp_item->choice.ng_ran_cgi.plmn.mcc = du_cell->plmn.mcc;
+        trp_info_type_resp_item->choice.ng_ran_cgi.plmn.mnc = du_cell->plmn.mnc;
+        trp_info_type_resp_item->choice.ng_ran_cgi.plmn.mnc_digit_length = du_cell->plmn.mnc_digit_length;
+        trp_info_type_resp_item->choice.ng_ran_cgi.nr_cellid = du_cell->nr_cellid;
+        break;
+      case F1AP_TRP_INFORMATION_TYPE_ITEM_NR_ARFCN:
+        trp_info_type_resp_item->present = F1AP_TRP_INFORMATION_TYPE_RESPONSE_ITEM_PR_NRARFCN;
+        if (du_cell->mode == F1AP_MODE_TDD) {
+          trp_info_type_resp_item->choice.nr_arfcn = du_cell->tdd.freqinfo.arfcn;
+        } else if (du_cell->mode == F1AP_MODE_FDD) {
+          trp_info_type_resp_item->choice.nr_arfcn = du_cell->fdd.ul_freqinfo.arfcn;
+        } else {
+          AssertFatal(false, "illegal mode\n");
+        }
+        break;
+      case F1AP_TRP_INFORMATION_TYPE_ITEM_PRS_CONFIG:
+        AssertFatal(false, "PRS config not supported\n");
+        break;
+      case F1AP_TRP_INFORMATION_TYPE_ITEM_SSB_CONFIG:
+        AssertFatal(false, "SSB config not supported\n");
+        break;
+      case F1AP_TRP_INFORMATION_TYPE_ITEM_SFN_INIT_TIME:
+        AssertFatal(false, "SFN INIT TIME not supported\n");
+        break;
+      case F1AP_TRP_INFORMATION_TYPE_ITEM_SPATIAL_DIRECTION_INFO:
+        AssertFatal(false, "SPATIAL DIRECTION INFO not supported\n");
+        break;
+      case F1AP_TRP_INFORMATION_TYPE_ITEM_GEO_COORDINATES:
+        trp_info_type_resp_item->present = F1AP_TRP_INFORMATION_TYPE_RESPONSE_ITEM_PR_GEOGRAPHICALCOORDINATES;
+        f1ap_geographical_coordinates_t *geographicalCoordinates = &trp_info_type_resp_item->choice.geographical_coordinates;
+        f1ap_trp_position_definition_type_t *tRPPositionDefinitionType = &geographicalCoordinates->trp_position_definition_type;
+
+        // referenced
+        tRPPositionDefinitionType->present = F1AP_TRP_POSITION_DEFINITION_TYPE_PR_REFERENCED;
+        f1ap_trp_position_referenced_t *referenced = &tRPPositionDefinitionType->choice.referenced;
+
+        // coordinate ID
+        referenced->reference_point.present = F1AP_REFERENCE_POINT_PR_COORDINATEID;
+        referenced->reference_point.choice.coordinate_id = 2;
+
+        // relative cartesian
+        f1ap_trp_reference_point_type_t *referencePointType = &referenced->reference_point_type;
+        referencePointType->present = F1AP_TRP_REFERENCE_POINT_TYPE_PR_TRPPOSITION_RELATIVE_CARTESIAN;
+        f1ap_relative_cartesian_location_t *trp_pos_cart = &referencePointType->choice.trp_position_relative_cartesian;
+
+        // 0 = millimeter
+        trp_pos_cart->xyz_unit = positioning_config->trps[trp_idx].unit;
+        trp_pos_cart->xvalue = positioning_config->trps[trp_idx].x_axis;
+        trp_pos_cart->yvalue = positioning_config->trps[trp_idx].y_axis;
+        trp_pos_cart->zvalue = positioning_config->trps[trp_idx].z_axis;
+
+        // random values for uncertainity and confidence
+        trp_pos_cart->location_uncertainty.horizontal_uncertainty = 1;
+        trp_pos_cart->location_uncertainty.horizontal_confidence = 2;
+        trp_pos_cart->location_uncertainty.vertical_uncertainty = 3;
+        trp_pos_cart->location_uncertainty.vertical_confidence = 4;
+        break;
+      default:
+        AssertFatal(false, "Illegal trp information type item\n");
+        break;
+    }
+  }
+}

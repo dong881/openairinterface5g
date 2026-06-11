@@ -53,6 +53,9 @@
 
 #define F1AP_PAGING(mSGpTR)                        (mSGpTR)->ittiMsg.f1ap_paging
 
+#define F1AP_TRP_INFORMATION_REQ(mSGpTR) (mSGpTR)->ittiMsg.f1ap_trp_information_req
+#define F1AP_TRP_INFORMATION_RESP(mSGpTR) (mSGpTR)->ittiMsg.f1ap_trp_information_resp
+
 /* Length of the transport layer address string
  * 160 bits / 8 bits by char.
  */

@@ -9,6 +9,7 @@
 #include "lib/f1ap_rrc_message_transfer.h"
 #include "lib/f1ap_interface_management.h"
 #include "lib/f1ap_ue_context.h"
+#include "lib/f1ap_positioning.h"
 
 static void f1_reset_du_initiated_direct(const f1ap_reset_t *reset)
 {
@@ -108,6 +109,14 @@ static void initial_ul_rrc_message_transfer_direct(module_id_t module_id, const 
   itti_send_msg_to_task(TASK_RRC_GNB, module_id, msg);
 }
 
+static void trp_information_response_direct(const f1ap_trp_information_resp_t *resp)
+{
+  MessageDef *msg = itti_alloc_new_message(TASK_MAC_GNB, 0, F1AP_TRP_INFORMATION_RESP);
+  msg->ittiMsgHeader.originInstance = -1; // means monolithic
+  F1AP_TRP_INFORMATION_RESP(msg) = cp_trp_information_resp(resp);
+  itti_send_msg_to_task(TASK_RRC_GNB, 0, msg);
+}
+
 void mac_rrc_ul_direct_init(struct nr_mac_rrc_ul_if_s *mac_rrc)
 {
   mac_rrc->f1_reset = f1_reset_du_initiated_direct;
@@ -120,4 +129,5 @@ void mac_rrc_ul_direct_init(struct nr_mac_rrc_ul_if_s *mac_rrc)
   mac_rrc->ue_context_release_request = ue_context_release_request_direct;
   mac_rrc->ue_context_release_complete = ue_context_release_complete_direct;
   mac_rrc->initial_ul_rrc_message_transfer = initial_ul_rrc_message_transfer_direct;
+  mac_rrc->trp_information_response = trp_information_response_direct;
 }

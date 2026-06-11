@@ -69,6 +69,7 @@ unsigned short config_frames[4] = {2,9,11,13};
 #include "x2ap_eNB.h"
 #include "openair1/SCHED_NR/sched_nr.h"
 #include "openair2/SDAP/nr_sdap/nr_sdap.h"
+#include "openair3/NRPPA/nrppa_gNB.h"
 
 RAN_CONTEXT_t RC;
 pthread_cond_t nfapi_sync_cond;
@@ -244,6 +245,11 @@ static int create_gNB_tasks(ngran_node_t node_type, configmodule_interface_t *cf
     if (gnb_nb > 0) {
       if (itti_create_task (TASK_NGAP, ngap_gNB_task, NULL) < 0) {
         LOG_E(NGAP, "Create task for NGAP failed\n");
+        return -1;
+      }
+
+      if (itti_create_task(TASK_NRPPA, nrppa_gNB_task, NULL) < 0) {
+        LOG_E(NGAP, "Create task for NRPPA failed\n");
         return -1;
       }
     }
