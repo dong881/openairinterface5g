@@ -631,7 +631,7 @@ static int nr_ue_pdsch_procedures(PHY_VARS_NR_UE *ue,
   return 0;
 }
 
-static uint32_t compute_csi_rm_unav_res(fapi_nr_dl_config_dlsch_pdu_rel15_t *dlsch_config)
+static uint32_t compute_csi_rm_unav_res(fapi_nr_dl_config_dlsch_pdu_rel15_t *dlsch_config, freq_alloc_bitmap_t *freq_alloc)
 {
   uint32_t unav_res = 0;
   for (int i = 0; i < dlsch_config->numCsiRsForRateMatching; i++) {
@@ -660,15 +660,17 @@ static uint32_t compute_csi_rm_unav_res(fapi_nr_dl_config_dlsch_pdu_rel15_t *dls
     // check number overlapping prbs
     // assuming CSI is spanning the whole BW
     AssertFatal(dlsch_config->BWPSize <= csi_pdu->nr_of_rbs, "Assuming CSI-RS is spanning the whold BWP this shouldn't happen\n");
-    int dlsch_start = dlsch_config->start_rb + dlsch_config->BWPStart;
-    int num_overlapping_prbs = dlsch_config->number_rbs;
-    if (num_overlapping_prbs < 1)
-      continue; // no overlapping prbs
-    if (csi_pdu->freq_density < 2) { // 0.5 density
-      num_overlapping_prbs /= 2;
-      // odd number of prbs and the start PRB is even/odd when CSI is in even/odd PRBs
-      if ((num_overlapping_prbs % 2) && ((dlsch_start % 2) == csi_pdu->freq_density))
-        num_overlapping_prbs += 1;
+    int num_overlapping_prbs = 0;
+    for (int rb = freq_alloc->first_rb; rb <= freq_alloc->last_rb; rb++) {
+      if (!check_rb_in_bitmap(freq_alloc, rb))
+        continue;
+      if (csi_pdu->freq_density < 2) {
+        int abs_rb = rb + dlsch_config->BWPStart;
+        if ((abs_rb % 2) == csi_pdu->freq_density)
+          num_overlapping_prbs++;
+      } else {
+        num_overlapping_prbs++;
+      }
     }
     // density is number or res per port per rb (over all symbols)
     int ports [18] = {1, 1, 2, 4, 4, 8, 8, 8, 12, 12, 16, 16, 24, 24, 24, 32, 32, 32};
@@ -1224,7 +1226,7 @@ void pdsch_processing(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, nr_phy_
       int ptrsSymbPerSlot = get_ptrs_symbols_in_slot(ptrsSymbPos, dlsch_config->start_symbol, dlsch_config->number_symbols);
       unav_res = n_ptrs * ptrsSymbPerSlot;
     }
-    unav_res += compute_csi_rm_unav_res(dlsch_config);
+    unav_res += compute_csi_rm_unav_res(dlsch_config, &freq_alloc);
     int G = nr_get_G(freq_alloc.num_rbs,
                      dlsch_config->number_symbols,
                      nb_re_dmrs,
