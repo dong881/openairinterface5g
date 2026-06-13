@@ -998,12 +998,12 @@ static uci_on_pusch_bit_type_t *nr_data_control_mapping(const NR_UE_ULSCH_t *uls
   }
 
   int first_non_dmrs_sym = 0;
-  int l1_c = 0;
+  int first_symb_after_dmrs = 0;
   get_first_uci_symbol(pusch_pdu->start_symbol_index,
                        pusch_pdu->nr_of_symbols,
                        pusch_pdu->ul_dmrs_symb_pos,
                        &first_non_dmrs_sym,
-                       &l1_c);
+                       &first_symb_after_dmrs);
 
   memset(template, 0, codeword_len * sizeof(uci_on_pusch_bit_type_t));
 
@@ -1013,7 +1013,7 @@ static uci_on_pusch_bit_type_t *nr_data_control_mapping(const NR_UE_ULSCH_t *uls
   struct map_uci_common_arg map_arg = {.template = template,
                                        .n_symbols = pusch_pdu->nr_of_symbols,
                                        .nlqm = pusch_pdu->qam_mod_order * pusch_pdu->nrOfLayers,
-                                       .l1_c = l1_c,
+                                       .l1_c = first_symb_after_dmrs,
                                        .m_uci_current = m_uci_current,
                                        .m_ulsch_initial = m_ulsch_initial};
 
@@ -1035,6 +1035,7 @@ static uci_on_pusch_bit_type_t *nr_data_control_mapping(const NR_UE_ULSCH_t *uls
   map_arg.G_uci = rm_info->E_uci_CSI1;
   map_arg.resv_ack_pos_symb = positions_by_sym;
   map_arg.resv_ack_count_symb = count_by_sym;
+  map_arg.l1_c = first_non_dmrs_sym;
   map_uci_common(map_arg);
   // CSI part 2
   map_arg.uci_type_to_map = BIT_TYPE_CSI2;
@@ -1042,7 +1043,7 @@ static uci_on_pusch_bit_type_t *nr_data_control_mapping(const NR_UE_ULSCH_t *uls
   map_uci_common(map_arg);
 
   if (rm_info->O_ack == 2) {
-    map_overlapped_ack(template, rm_info->E_uci_ACK_actual, l1_c, pusch_pdu, positions_by_sym, count_by_sym);
+    map_overlapped_ack(template, rm_info->E_uci_ACK_actual, first_symb_after_dmrs, pusch_pdu, positions_by_sym, count_by_sym);
   }
 
   apply_template_to_codeword(codeword, template, rm_info, codeword_len, ulsch_bits, cack, csi1, csi2, G_ulsch);
