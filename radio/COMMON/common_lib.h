@@ -338,11 +338,13 @@ typedef struct {
   pthread_mutex_t mutex_write;
   pthread_mutex_t mutex_store;
   openair0_timestamp_t nextTS;
-  struct {
+  struct reorder_queue {
     bool active;
     openair0_timestamp_t timestamp;
     void **txp;
     int nsamps;
+    int nb_writers;
+    int already_wrote;
     int nbAnt;
     int flags;
   } queue[WRITE_QUEUE_SZ];
@@ -648,6 +650,7 @@ int openair0_write_reorder_common(nrue_ru_write_t nrue_ru_write,
                                   openair0_timestamp_t timestamp,
                                   void **txp,
                                   int nsamps,
+                                  int nb_writers,
                                   int nbAnt,
                                   int flags);
 #define  DEVICE_SECTION   "device"

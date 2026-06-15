@@ -440,7 +440,7 @@ static void fullwrite(int fd, void *_buf, ssize_t count, rfsimulator_state_t *t)
         continue;
 
       if (errno == EAGAIN) {
-        LOG_D(HW, "write() failed, errno(%d)\n", errno);
+        // LOG_D(HW, "write() failed, errno(%d)\n", errno);
         usleep(250);
         continue;
       } else {
@@ -938,7 +938,7 @@ static int startClient(openair0_device_t *device)
   bool have_to_wait;
   do {
     have_to_wait = true;
-    flushInput(t, 3, true);
+    flushInput(t, 300, true);
     if (b->lastReceivedTS)
       have_to_wait = false;
   } while (have_to_wait);
@@ -1437,7 +1437,7 @@ static int rfsimulator_read_beams(openair0_device_t *device,
               "Waiting on socket, current last ts: %ld, expected at least : %ld\n",
               b->lastReceivedTS,
               t->nextRxTstamp + nsamps);
-        flushInput(t, 3, false);
+        flushInput(t, 300, false);
       }
     } while (have_to_wait);
   }
