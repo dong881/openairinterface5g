@@ -217,11 +217,19 @@ amarisoft_00105_40MHz:
   InitScript: /root/lteue-linux-2025-03-15/lteue /root/oaicicd/ran_sa_fhi72_mplane_40MHz/multi-00105-40.cfg &
   TermScript: /root/lteue-linux-2025-03-15/ws.js -t 10 127.0.0.1:9002 '{"message":"quit"}' || killall -KILL lteue-avx2
   NetworkScript: ip netns exec ue1 ip a show dev pdn0
+  Tracing:
+    Start: '' # nothing to be done
+    Stop: '' # nothing to be done
+    Collect: 'cp /tmp/ue.log %%log_dir%%'
 amarisoft_00105_100MHz:
   Host: amariue
   InitScript: /root/lteue-linux-2025-03-15/lteue /root/oaicicd/ran_sa_fhi72_mplane_100MHz/multi-00105-100.cfg &
   TermScript: /root/lteue-linux-2025-03-15/ws.js -t 10 127.0.0.1:9002 '{"message":"quit"}' || killall -KILL lteue-avx2
   NetworkScript: ip netns exec ue1 ip a show dev pdn0
+  Tracing:
+    Start: '' # nothing to be done
+    Stop: '' # nothing to be done
+    Collect: 'cp /tmp/ue.log %%log_dir%%'
 amarisoft_ue_1:
   Host: amariue
   AttachScript: /root/lteue-linux-2025-03-15/ws.js 127.0.0.1:9002 '{"message":"power_on","ue_id":1}'
