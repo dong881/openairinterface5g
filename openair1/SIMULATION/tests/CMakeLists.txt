@@ -110,6 +110,7 @@ add_physim_test(physim.5g.nr_dlsim.offset.test2 "106 PRB 51 PDSCH-Offset" nr_dls
 add_physim_test(physim.5g.nr_dlsim.offset.test3 "217 PRB 100 PDSCH-PRBs" nr_dlsim -P -n300 -R217 -b100 -s5)
 add_physim_test(physim.5g.nr_dlsim.offset.test4 "217 PRB 80 PDSCH-Offset" nr_dlsim -P -n300 -R217 -a80 -s5)
 add_physim_test(physim.5g.nr_dlsim.offset.test5 "217 PRB 100 PDSCH-PRBs 110 PDSCH-Offset" nr_dlsim -P -n300 -R217 -a110 -s5 -b100)
+add_physim_test(physim.5g.nr_dlsim.offset.test6 "106 PRB TYPE0 32:47 64:79" nr_dlsim -P -n300 -R106 -D 32:16,64:16 -s5)
 add_physim_test(physim.5g.nr_dlsim.mcs.mimo.test1 "106 PRBs 50 PDSCH-PRBs MCS Index 27" nr_dlsim -P -n300 -e27 -s30)
 add_physim_test(physim.5g.nr_dlsim.mcs.mimo.test2 "106 PRBs 50 PDSCH-PRBs MCS Index 16" nr_dlsim -P -n300 -e16 -s11 -S13)
 add_physim_test(physim.5g.nr_dlsim.mcs.mimo.test3 "106 MCS-TABLE 256 QAM MCS Index 26" nr_dlsim -P -n300 -q1 -e26 -s30)
