@@ -308,6 +308,16 @@ def UndeployWithScript(HTML, ctx, node, script, options):
 	HTML.CreateHtmlTestRowQueue(f'on node {node}', 'OK' if ret.returncode == 0 else 'KO', [f'{ret.stdout}\n\n{msg}'])
 	return ret.returncode == 0
 
+def CollectFile(HTML, node, ctx, remote_host, remote_path):
+	logging.info(f'Collecting {remote_path} from {remote_host} via {node}')
+	basename = os.path.basename(remote_path)
+	with cls_cmd.getConnection(node) as cmd:
+	   cmd.run(f'scp {remote_host}:{remote_path} /tmp/')
+	   local_file = archiveArtifact(cmd, ctx, f'/tmp/{basename}')
+	HTML.CreateHtmlTestRowQueue(f'on node {node}', 'OK' if local_file is not None else 'KO', [f'{local_file}'])
+	return local_file is not None
+
+
 #-----------------------------------------------------------
 # OaiCiTest Class Definition
 #-----------------------------------------------------------

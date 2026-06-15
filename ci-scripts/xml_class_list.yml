@@ -35,3 +35,4 @@
   - AnalyzeRTStats_Object
   - DeployWithScript
   - UndeployWithScript
+  - Collect_File

@@ -132,6 +132,15 @@
   </testCase>
 
   <testCase>
+    <class>Collect_File</class>
+    <desc>Collect Benetel RU log</desc>
+    <always_exec>true</always_exec>
+    <node>cacofonix</node>
+    <remote_host>benetel81-mplane</remote_host>
+    <remote_path>/home/root/mplane/logs/o_ru_app_mplane.log</remote_path>
+  </testCase>
+
+  <testCase>
     <class>Clean_Test_Server_Images</class>
     <always_exec>true</always_exec>
     <desc>Clean Test Images on Test Server</desc>

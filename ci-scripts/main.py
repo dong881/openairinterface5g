@@ -242,6 +242,11 @@ def ExecuteActionWithParam(action, ctx, node):
 		yaml = test.findtext('stats_cfg')
 		success = RAN.AnalyzeRTStats(HTML, node, ctx, yaml)
 
+	elif action == 'Collect_File':
+		remote_host = test.findtext('remote_host')
+		remote_path = test.findtext('remote_path')
+		success = cls_oaicitest.CollectFile(HTML, node, ctx, remote_host, remote_path)
+
 	elif action == 'AnalyzeRTStats_Object':
 		yaml = test.findtext('stats_cfg')
 		service = test.findtext('service')
