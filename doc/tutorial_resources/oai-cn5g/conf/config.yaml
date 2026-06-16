@@ -213,7 +213,7 @@ lmf:
   num_gnb: 1
   trp_info_wait_ms: 500
   positioning_wait_ms: 500
-  measurement_wait_ms: 500
+  measurement_wait_ms: 5000
   support_features:
     request_trp_info: no
     determine_num_gnb: yes
