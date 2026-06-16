@@ -250,11 +250,11 @@ typedef struct trp_s {
   // TRP id
   uint32_t id;
   // TRP x-axis value
-  uint32_t x_axis;
+  int32_t x_axis;
   // TRP y-axis value
-  uint32_t y_axis;
+  int32_t y_axis;
   // TRP z-axis value
-  uint32_t z_axis;
+  int32_t z_axis;
   // 0 = mm, 1 = cm, 2 = dm
   uint8_t unit;
 } trp_t;
