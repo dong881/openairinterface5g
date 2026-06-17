@@ -405,6 +405,15 @@ typedef struct PHY_VARS_NR_UE_s {
   /// CSI variables
   nr_csi_info_t *nr_csi_info;
 
+  // Pre-allocated scratch buffers (worst-case dimensions, reused each slot to avoid stack VLAs / per-slot malloc)
+  c16_t *slot_rxdataF_buf; ///< [nb_antennas_rx * samples_per_slot_wCP] — replaces stack VLA in pdsch_processing
+  c16_t *pdsch_ch_mag_buf; ///< [symbols_per_slot * NR_MAX_NB_LAYERS * rx_size_max]
+  c16_t *pdsch_ch_magb_buf; ///< [symbols_per_slot * NR_MAX_NB_LAYERS * rx_size_max]
+  c16_t *pdsch_ch_magr_buf; ///< [symbols_per_slot * NR_MAX_NB_LAYERS * rx_size_max]
+  c16_t *pdsch_rxdataF_comp_buf; ///< [symbols_per_slot * NR_MAX_NB_LAYERS * rx_size_max]
+  c16_t *pdsch_rho_dl_buf; ///< [symbols_per_slot * NR_MAX_NB_LAYERS^2 * rx_size_max]
+  int32_t *pdsch_dl_ch_est_buf; ///< [nb_antennas_rx * NR_MAX_NB_LAYERS * pdsch_est_size_max]
+
   // TODO: move this out of phy
   time_stats_t ue_ul_indication_stats;
   nr_ue_phy_cpu_stat_t phy_cpu_stats;

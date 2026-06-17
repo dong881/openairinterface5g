@@ -464,8 +464,11 @@ static int nr_ue_pdsch_procedures(PHY_VARS_NR_UE *ue,
         dlsch->cw_info.Nl);
 
   const uint32_t pdsch_est_size = ((ue->frame_parms.symbols_per_slot * ue->frame_parms.ofdm_symbol_size + 15) / 16) * 16;
-  fourDimArray_t *toFree = NULL;
-  allocCast2D(pdsch_dl_ch_estimates, int32_t, toFree, ue->frame_parms.nb_antennas_rx * dlsch->cw_info.Nl, pdsch_est_size, false);
+  // Reuse pre-allocated scratch buffers from the UE struct — cast to VLA pointer types with actual runtime dimensions.
+  // Each buffer was sized at UE init for worst-case (N_RB_DL RBs, NR_MAX_NB_LAYERS layers).
+  // No memset needed: dl_ch_estimates is only ever accessed at DMRS symbol offsets,
+  // which are always written by nr_pdsch_channel_estimation before being read.
+  int32_t(*pdsch_dl_ch_estimates)[pdsch_est_size] = (int32_t(*)[pdsch_est_size])ue->pdsch_dl_ch_est_buf;
 
   c16_t ptrs_phase_per_slot[ue->frame_parms.nb_antennas_rx][NR_SYMBOLS_PER_SLOT];
   memset(ptrs_phase_per_slot, 0, sizeof(ptrs_phase_per_slot));
@@ -474,8 +477,7 @@ static int nr_ue_pdsch_procedures(PHY_VARS_NR_UE *ue,
   memset(ptrs_re_per_slot, 0, sizeof(ptrs_re_per_slot));
 
   const uint32_t rx_size_symbol = (freq_alloc->num_rbs * NR_NB_SC_PER_RB + 15) & ~15;
-  fourDimArray_t *toFree2 = NULL;
-  allocCast3D(rxdataF_comp, c16_t, toFree2, ue->frame_parms.symbols_per_slot, dlsch->cw_info.Nl, rx_size_symbol, false);
+  c16_t(*rxdataF_comp)[dlsch->cw_info.Nl][rx_size_symbol] = (c16_t(*)[dlsch->cw_info.Nl][rx_size_symbol])ue->pdsch_rxdataF_comp_buf;
 
   uint32_t nvar = 0;
 
@@ -558,19 +560,14 @@ static int nr_ue_pdsch_procedures(PHY_VARS_NR_UE *ue,
                                                          freq_alloc->num_rbs * NR_NB_SC_PER_RB * dlschCfg->number_symbols,
                                                          &mt);
   }
-  fourDimArray_t *toFree3 = NULL;
-  allocCast3D(dl_ch_mag, c16_t, toFree3, NR_SYMBOLS_PER_SLOT, dlsch->cw_info.Nl, rx_size_symbol, false);
-  fourDimArray_t *toFree4 = NULL;
-  allocCast3D(dl_ch_magb, c16_t, toFree4, NR_SYMBOLS_PER_SLOT, dlsch->cw_info.Nl, rx_size_symbol, false);
-  fourDimArray_t *toFree5 = NULL;
-  allocCast3D(dl_ch_magr, c16_t, toFree5, NR_SYMBOLS_PER_SLOT, dlsch->cw_info.Nl, rx_size_symbol, false);
-  fourDimArray_t *toFreeRho = NULL;
+  c16_t(*dl_ch_mag)[dlsch->cw_info.Nl][rx_size_symbol] = (c16_t(*)[dlsch->cw_info.Nl][rx_size_symbol])ue->pdsch_ch_mag_buf;
+  c16_t(*dl_ch_magb)[dlsch->cw_info.Nl][rx_size_symbol] = (c16_t(*)[dlsch->cw_info.Nl][rx_size_symbol])ue->pdsch_ch_magb_buf;
+  c16_t(*dl_ch_magr)[dlsch->cw_info.Nl][rx_size_symbol] = (c16_t(*)[dlsch->cw_info.Nl][rx_size_symbol])ue->pdsch_ch_magr_buf;
+
   const bool need_rho = ue->do_ml && dlsch->cw_info.Nl == 2 && dlsch->cw_info.qamModOrder <= 6;
   c16_t(*rho_dl)[dlsch->cw_info.Nl * dlsch->cw_info.Nl][rx_size_symbol] = NULL;
-  if (need_rho) {
-    allocCast3D(rho_dl_buf, c16_t, toFreeRho, NR_SYMBOLS_PER_SLOT, dlsch->cw_info.Nl * dlsch->cw_info.Nl, rx_size_symbol, false);
-    rho_dl = rho_dl_buf;
-  }
+  if (need_rho)
+    rho_dl = (c16_t(*)[dlsch->cw_info.Nl * dlsch->cw_info.Nl][rx_size_symbol]) ue->pdsch_rho_dl_buf;
 
   for (int m = dlschCfg->start_symbol; m < (dlschCfg->number_symbols + dlschCfg->start_symbol); m++) {
     bool first_symbol_flag = false;
@@ -622,12 +619,6 @@ static int nr_ue_pdsch_procedures(PHY_VARS_NR_UE *ue,
   if (scope_req.copy_rxdataF_to_scope) {
     UEunlockScopeData(ue, pdschRxdataF);
   }
-  free(toFree);
-  free(toFree2);
-  free(toFree3);
-  free(toFree4);
-  free(toFree5);
-  free(toFreeRho);
   return 0;
 }
 
@@ -1157,7 +1148,8 @@ void pdsch_processing(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, nr_phy_
 
   bool slot_fep_map[14] = {0};
   const uint32_t rxdataF_sz = ue->frame_parms.samples_per_slot_wCP;
-  __attribute__ ((aligned(32))) c16_t rxdataF[ue->frame_parms.nb_antennas_rx][rxdataF_sz];
+  // Use pre-allocated heap buffer instead of a large stack VLA (up to 896 KB at 4 ant / mu=0).
+  c16_t(*rxdataF)[rxdataF_sz] = (c16_t(*)[rxdataF_sz])ue->slot_rxdataF_buf;
 
   // do procedures for CSI-IM
   if (phy_data->csiim_vars.active == 1) {

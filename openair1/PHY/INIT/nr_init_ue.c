@@ -253,6 +253,19 @@ int init_nr_ue_signal(PHY_VARS_NR_UE *ue, int nb_connected_gNB)
     }
   }
 
+  // Pre-allocate PDSCH scratch buffers once (worst-case dimensions) to avoid per-slot malloc/free.
+  // rx_size_max covers the full carrier bandwidth; pdsch_est_size_max is fixed by numerology.
+  const uint32_t rx_size_max = (fp->N_RB_DL * NR_NB_SC_PER_RB + 15) & ~15;
+  const uint32_t pdsch_est_size_max = ((fp->symbols_per_slot * fp->ofdm_symbol_size + 15) / 16) * 16;
+  const size_t mag_buf_sz = fp->symbols_per_slot * NR_MAX_NB_LAYERS * rx_size_max * sizeof(c16_t);
+  ue->slot_rxdataF_buf = malloc16_clear(fp->nb_antennas_rx * fp->samples_per_slot_wCP * sizeof(c16_t));
+  ue->pdsch_ch_mag_buf = malloc16_clear(mag_buf_sz);
+  ue->pdsch_ch_magb_buf = malloc16_clear(mag_buf_sz);
+  ue->pdsch_ch_magr_buf = malloc16_clear(mag_buf_sz);
+  ue->pdsch_rxdataF_comp_buf = malloc16_clear(mag_buf_sz);
+  ue->pdsch_rho_dl_buf = malloc16_clear(fp->symbols_per_slot * NR_MAX_NB_LAYERS * NR_MAX_NB_LAYERS * rx_size_max * sizeof(c16_t));
+  ue->pdsch_dl_ch_est_buf = malloc16_clear(fp->nb_antennas_rx * NR_MAX_NB_LAYERS * pdsch_est_size_max * sizeof(int32_t));
+
   ue->init_averaging = 1;
   init_symbol_rotation(fp);
   init_timeshift_rotation(fp->ofdm_symbol_size, fp->nb_prefix_samples, fp->ofdm_offset_divisor, fp->timeshift_symbol_rotation);
@@ -317,6 +330,14 @@ void term_nr_ue_signal(PHY_VARS_NR_UE *ue)
   }
 
   sl_ue_free(ue);
+
+  free_and_zero(ue->slot_rxdataF_buf);
+  free_and_zero(ue->pdsch_ch_mag_buf);
+  free_and_zero(ue->pdsch_ch_magb_buf);
+  free_and_zero(ue->pdsch_ch_magr_buf);
+  free_and_zero(ue->pdsch_rxdataF_comp_buf);
+  free_and_zero(ue->pdsch_rho_dl_buf);
+  free_and_zero(ue->pdsch_dl_ch_est_buf);
 }
 
 void free_nr_ue_dl_harq(NR_DL_UE_HARQ_t harq_list[2][NR_MAX_HARQ_PROCESSES], int number_of_processes, int num_rb)
