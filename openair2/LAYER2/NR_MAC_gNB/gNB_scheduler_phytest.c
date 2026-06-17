@@ -309,7 +309,7 @@ void nr_ul_preprocessor_phytest(gNB_MAC_INST *nr_mac, post_process_pusch_t *pp_p
       // tpmi in post-process
       .time_domain_allocation = tda,
       .tda_info = tda_info,
-      .dmrs_info = get_ul_dmrs_params(scc, ul_bwp, &tda_info, target_ul_Nl),
+      .dmrs_info = get_ul_dmrs_params(scc, ul_bwp, &tda_info, target_ul_Nl, 0, 0),
       .bwp_info = get_pusch_bwp_start_size(UE),
       .ant_port_idx.numSpatialStreamIndices = nr_mac->radio_config.pusch_AntennaPorts,
   };

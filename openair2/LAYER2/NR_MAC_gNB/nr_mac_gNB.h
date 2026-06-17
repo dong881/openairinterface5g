@@ -438,6 +438,7 @@ typedef struct NR_pusch_dmrs {
   uint8_t num_dmrs_symb;
   uint16_t ul_dmrs_symb_pos;
   uint8_t num_dmrs_cdm_grps_no_data;
+  uint16_t dmrs_ports;
   nfapi_nr_dmrs_type_e dmrs_config_type;
   int dmrs_scrambling_id;
   int pusch_identity;

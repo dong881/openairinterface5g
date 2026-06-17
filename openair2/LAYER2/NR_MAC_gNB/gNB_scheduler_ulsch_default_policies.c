@@ -227,6 +227,28 @@ static int compare_ul_pf_rb_ptrs(const void *a, const void *b)
   return (wa < wb) - (wa > wb);
 }
 
+static void nr_ul_port_select_default(const nr_ul_sched_params_t *params, nr_ul_candidate_t *cand)
+{
+  if (cand->is_retx) {
+    const NR_sched_pusch_t *retInfo = &cand->UE->UE_sched_ctrl.ul_harq_processes[cand->retx_harq_pid].sched_pusch;
+    cand->sched_pusch.dmrs_info.num_dmrs_cdm_grps_no_data = retInfo->dmrs_info.num_dmrs_cdm_grps_no_data;
+    cand->sched_pusch.dmrs_info.dmrs_ports = retInfo->dmrs_info.dmrs_ports;
+  } else {
+    int layers = cand->sched_pusch.nrOfLayers;
+    NR_UE_UL_BWP_t *current_BWP = &cand->UE->current_UL_BWP;
+    uint8_t cdm_groups = (layers == 1 || cand->sched_pusch.tda_info.nrOfSymbols <= 2) ? 1 : 2;
+    if (current_BWP->transform_precoding)
+      cdm_groups = 2;
+    cand->sched_pusch.dmrs_info.dmrs_ports = (uint16_t)((1 << layers) - 1);
+    cand->sched_pusch.dmrs_info = get_ul_dmrs_params(params->scc,
+                                                     current_BWP,
+                                                     &cand->sched_pusch.tda_info,
+                                                     cand->sched_pusch.nrOfLayers,
+                                                     cand->sched_pusch.dmrs_info.dmrs_ports,
+                                                     cdm_groups);
+  }
+}
+
 int nr_ul_proportional_fair(const nr_ul_sched_params_t *params, nr_ul_candidate_t *candidates, int n_candidates)
 {
   int n_scheduled = 0;
@@ -246,6 +268,8 @@ int nr_ul_proportional_fair(const nr_ul_sched_params_t *params, nr_ul_candidate_
     if (!cand->is_retx)
       continue;
 
+    nr_ul_port_select_default(params, cand);
+
     int rbStart;
     uint16_t *vrb_map = params->vrb_map_UL[cand->alloc_beam_idx];
     int block_len = find_largest_free_block(vrb_map, cand->alloc_slbitmap, cand->bwp_start, cand->bwp_size, &rbStart);
@@ -261,6 +285,8 @@ int nr_ul_proportional_fair(const nr_ul_sched_params_t *params, nr_ul_candidate_
     if (cand->is_retx || !cand->sched_inactive)
       continue;
 
+    nr_ul_port_select_default(params, cand);
+
     uint16_t *vrb_map = params->vrb_map_UL[cand->alloc_beam_idx];
     int rbStart;
     int block_len = find_largest_free_block(vrb_map, cand->alloc_slbitmap, cand->bwp_start, cand->bwp_size, &rbStart);
@@ -275,6 +301,8 @@ int nr_ul_proportional_fair(const nr_ul_sched_params_t *params, nr_ul_candidate_
     nr_ul_candidate_t *cand = order[j];
     if (cand->is_retx || cand->sched_inactive)
       continue;
+
+    nr_ul_port_select_default(params, cand);
 
     int block_start;
     uint16_t *vrb_map = params->vrb_map_UL[cand->alloc_beam_idx];
@@ -293,9 +321,8 @@ int nr_ul_proportional_fair(const nr_ul_sched_params_t *params, nr_ul_candidate_
       }
     }
 
+    NR_pusch_dmrs_t dmrs_info = cand->sched_pusch.dmrs_info;
     NR_UE_UL_BWP_t *current_BWP = &cand->UE->current_UL_BWP;
-    NR_pusch_dmrs_t dmrs_info =
-        get_ul_dmrs_params(params->scc, current_BWP, &cand->sched_pusch.tda_info, cand->sched_pusch.nrOfLayers);
     uint16_t Rt;
     uint8_t Qt;
     update_ul_ue_R_Qm(mcs, current_BWP->mcs_table, current_BWP->pusch_Config, &Rt, &Qt);

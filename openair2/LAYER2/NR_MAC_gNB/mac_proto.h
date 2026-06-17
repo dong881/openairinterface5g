@@ -279,7 +279,9 @@ const NR_DMRS_UplinkConfig_t *get_DMRS_UplinkConfig(const NR_PUSCH_Config_t *pus
 NR_pusch_dmrs_t get_ul_dmrs_params(const NR_ServingCellConfigCommon_t *scc,
                                    const NR_UE_UL_BWP_t *ul_bwp,
                                    const NR_tda_info_t *tda_info,
-                                   const int Layers);
+                                   const int Layers,
+                                   const uint16_t dmrs_ports,
+                                   const uint8_t cdm_groups);
 
 int get_spf(nfapi_nr_config_request_scf_t *cfg);
 

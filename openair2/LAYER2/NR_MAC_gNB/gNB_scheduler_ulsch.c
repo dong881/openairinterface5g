@@ -1696,7 +1696,12 @@ uint16_t check_ul_retx_feasibility(const nr_ul_candidate_t *cand,
   NR_UE_UL_BWP_t *current_BWP = &cand->UE->current_UL_BWP;
   const NR_sched_pusch_t *retInfo = &sched_ctrl->ul_harq_processes[cand->retx_harq_pid].sched_pusch;
 
-  NR_pusch_dmrs_t dmrs_info = get_ul_dmrs_params(scc, current_BWP, tda_info, retInfo->nrOfLayers);
+  NR_pusch_dmrs_t dmrs_info = get_ul_dmrs_params(scc,
+                                                 current_BWP,
+                                                 tda_info,
+                                                 retInfo->nrOfLayers,
+                                                 retInfo->dmrs_info.dmrs_ports,
+                                                 retInfo->dmrs_info.num_dmrs_cdm_grps_no_data);
   uint32_t new_tbs;
   uint16_t new_rbSize;
   bool ok = nr_find_nb_rb(retInfo->Qm,
@@ -1759,7 +1764,12 @@ static int apply_ul_retransmission(gNB_MAC_INST *nrmac,
     new_sched.rbStart = cand->sched_pusch.rbStart;
   } else {
     /* TDA changed vs original retx: recompute DMRS and TB size for new TDA */
-    NR_pusch_dmrs_t dmrs_info = get_ul_dmrs_params(scc, current_BWP, tda_info, nrOfLayers);
+    NR_pusch_dmrs_t dmrs_info = get_ul_dmrs_params(scc,
+                                                   current_BWP,
+                                                   tda_info,
+                                                   nrOfLayers,
+                                                   retInfo->dmrs_info.dmrs_ports,
+                                                   retInfo->dmrs_info.num_dmrs_cdm_grps_no_data);
     new_sched.rbSize = cand->sched_pusch.rbSize;
     new_sched.rbStart = cand->sched_pusch.rbStart;
     new_sched.tb_size = nr_compute_tbs(retInfo->Qm,
@@ -1824,7 +1834,12 @@ static int apply_ul_new_transmission(gNB_MAC_INST *nrmac,
   sched.ul_harq_pid = -1;
   sched.time_domain_allocation = tda;
   sched.tda_info = *tda_info;
-  sched.dmrs_info = get_ul_dmrs_params(scc, current_BWP, tda_info, sched.nrOfLayers);
+  sched.dmrs_info = get_ul_dmrs_params(scc,
+                                       current_BWP,
+                                       tda_info,
+                                       sched.nrOfLayers,
+                                       cand->sched_pusch.dmrs_info.dmrs_ports,
+                                       cand->sched_pusch.dmrs_info.num_dmrs_cdm_grps_no_data);
   sched.bwp_info = bi;
 
   // Map antenna ports for this UE
@@ -2071,7 +2086,7 @@ nfapi_nr_pusch_pdu_t *prepare_pusch_pdu(nfapi_nr_ul_tti_request_t *future_ul_tti
   pusch_pdu->nrOfLayers = sched_pusch->nrOfLayers;
   // DMRS
   pusch_pdu->num_dmrs_cdm_grps_no_data = sched_pusch->dmrs_info.num_dmrs_cdm_grps_no_data;
-  pusch_pdu->dmrs_ports = ((1 << sched_pusch->nrOfLayers) - 1);
+  pusch_pdu->dmrs_ports = sched_pusch->dmrs_info.dmrs_ports;
   pusch_pdu->ul_dmrs_symb_pos = sched_pusch->dmrs_info.ul_dmrs_symb_pos;
   pusch_pdu->dmrs_config_type = sched_pusch->dmrs_info.dmrs_config_type;
   pusch_pdu->scid = sched_pusch->dmrs_info.scid; // DMRS sequence initialization [TS38.211, sec 6.4.1.1.1]
@@ -2614,8 +2629,12 @@ bool nr_ul_check_phr(const nr_ul_sched_params_t *params,
 {
   NR_UE_UL_BWP_t *current_BWP = &cand->UE->current_UL_BWP;
   bool hasDeltaMCS = current_BWP->pusch_Config && current_BWP->pusch_Config->pusch_PowerControl->deltaMCS;
-  NR_pusch_dmrs_t dmrs_info =
-      get_ul_dmrs_params(params->scc, current_BWP, &cand->sched_pusch.tda_info, cand->sched_pusch.nrOfLayers);
+  NR_pusch_dmrs_t dmrs_info = get_ul_dmrs_params(params->scc,
+                                                 current_BWP,
+                                                 &cand->sched_pusch.tda_info,
+                                                 cand->sched_pusch.nrOfLayers,
+                                                 cand->sched_pusch.dmrs_info.dmrs_ports,
+                                                 cand->sched_pusch.dmrs_info.num_dmrs_cdm_grps_no_data);
   int n_dmrs = dmrs_info.N_PRB_DMRS * dmrs_info.num_dmrs_symb;
 
   /* Transient NR_sched_pusch_t scratchpad, feeds compute_ph_mcs_factor() which

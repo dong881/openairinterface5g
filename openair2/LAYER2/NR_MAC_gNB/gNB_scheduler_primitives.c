@@ -830,13 +830,13 @@ const NR_DMRS_UplinkConfig_t *get_DMRS_UplinkConfig(const NR_PUSCH_Config_t *pus
 NR_pusch_dmrs_t get_ul_dmrs_params(const NR_ServingCellConfigCommon_t *scc,
                                    const NR_UE_UL_BWP_t *ul_bwp,
                                    const NR_tda_info_t *tda_info,
-                                   const int Layers)
+                                   const int Layers,
+                                   const uint16_t dmrs_ports,
+                                   const uint8_t cdm_groups)
 {
   NR_pusch_dmrs_t dmrs = {0};
-  if (ul_bwp->transform_precoding && Layers < 3)
-    dmrs.num_dmrs_cdm_grps_no_data = ul_bwp->dci_format == NR_UL_DCI_FORMAT_0_1 || tda_info->nrOfSymbols <= 2 ? 1 : 2;
-  else
-    dmrs.num_dmrs_cdm_grps_no_data = 2;
+  dmrs.dmrs_ports = (dmrs_ports != 0) ? dmrs_ports : (uint16_t)((1 << Layers) - 1);
+  dmrs.num_dmrs_cdm_grps_no_data = (cdm_groups > 0) ? cdm_groups : 2;
 
   const NR_DMRS_UplinkConfig_t *NR_DMRS_UplinkConfig = get_DMRS_UplinkConfig(ul_bwp->pusch_Config, tda_info);
   dmrs.ptrsConfig = NR_DMRS_UplinkConfig
