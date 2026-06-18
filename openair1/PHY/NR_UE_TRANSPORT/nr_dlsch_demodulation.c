@@ -673,41 +673,33 @@ static void nr_dlsch_mmse(uint32_t rx_size_symbol,
   }
 }
 
+/* Demaps one OFDM symbol's worth of per-layer LLRs into the flat output buffer.
+ * Called once per symbol so the caller can use a small circular LLR scratch buffer
+ * instead of holding all NR_SYMBOLS_PER_SLOT symbols simultaneously. */
 static void nr_dlsch_layer_demapping(const uint8_t Nl,
                                      const uint8_t mod_order,
                                      const int llrLayerSize,
-                                     const int16_t llr_layers[NR_SYMBOLS_PER_SLOT][Nl][llrLayerSize],
-                                     const fapi_nr_dl_config_dlsch_pdu_rel15_t *dlsch_config,
-                                     const uint32_t re_len[NR_SYMBOLS_PER_SLOT],
+                                     const int16_t sym_llr[Nl][llrLayerSize],
+                                     const uint32_t re_len,
                                      int16_t *llr)
 {
-  const int s0 = dlsch_config->start_symbol;
-  const int s1 = dlsch_config->number_symbols;
-
-  int k = 0;
   switch (Nl) {
     case 1:
-      for (int i = s0; i < (s0 + s1); i++) {
-        memcpy(llr + k, llr_layers[i][0], re_len[i] * mod_order * sizeof(int16_t));
-        k += re_len[i] * mod_order;
-      }
+      memcpy(llr, sym_llr[0], re_len * mod_order * sizeof(int16_t));
       break;
 
     case 2:
     case 3:
-    case 4:
-      for (int i = s0; i < (s0 + s1); i++) {
-        int m = 0;
-        for (int j = 0; j < re_len[i]; j++) {
-          for (int l = 0; l < Nl; l++) {
-            memcpy(llr + k, llr_layers[i][l] + m * mod_order, sizeof(int16_t) * mod_order);
-            k += mod_order;
-            // if (i<4) printf("length%d: llr_layers[l%d][m%d]=%d: \n",length,l,m,llr_layers[l][i*mod_order+m]);
-          }
-          m++;
+    case 4: {
+      int k = 0;
+      for (int j = 0; j < re_len; j++) {
+        for (int l = 0; l < Nl; l++) {
+          memcpy(llr + k, sym_llr[l] + j * mod_order, sizeof(int16_t) * mod_order);
+          k += mod_order;
         }
       }
       break;
+    }
 
     default:
       AssertFatal(0, "Not supported number of layers %d\n", Nl);
@@ -1121,16 +1113,17 @@ int nr_rx_pdsch(PHY_VARS_NR_UE *ue,
 
   /* at last symbol in a slot calculate LLR's for whole slot */
   if (symbol == (startSymbIdx + nbSymb - 1)) {
-    /* create LLR layer buffer */
     int max_symb_re = 0;
     GET_ARRAY_MAX(dl_valid_re, NR_SYMBOLS_PER_SLOT, max_symb_re);
     const int llr_per_symbol = max_symb_re * dlsch->cw_info.qamModOrder;
-    __attribute__((aligned(32))) int16_t layer_llr[NR_SYMBOLS_PER_SLOT][nl][llr_per_symbol];
+    /* Single-symbol buffer: LLRs are demapped immediately after computation,
+     * so only one symbol's worth of data is needed at a time. */
+    __attribute__((aligned(32))) int16_t layer_llr[nl][llr_per_symbol];
 
-    // Generate LLR from PTRS compensated signal
     const uint8_t qamModOrder = dlsch->cw_info.qamModOrder;
-    start_meas_nr_ue_phy(ue, DLSCH_LLR_STATS);
+    int16_t *llr_out = llr;
     for (int llr_sym = startSymbIdx; llr_sym < startSymbIdx + nbSymb; llr_sym++) {
+      start_meas_nr_ue_phy(ue, DLSCH_LLR_STATS);
       if (nl == 2 && qamModOrder <= 6 && do_ml) {
         // 2-layer QPSK/16QAM/64QAM: joint ML-LLR using inter-layer Tx correlation
         // rho_dl[llr_sym] is laid out as [nl*nl][rx_size_symbol]:
@@ -1139,8 +1132,8 @@ int nr_rx_pdsch(PHY_VARS_NR_UE *ue,
                           rxdataF_comp[llr_sym][1],
                           dl_ch_mag[llr_sym][0],
                           dl_ch_mag[llr_sym][1],
-                          layer_llr[llr_sym][0],
-                          layer_llr[llr_sym][1],
+                          layer_llr[0],
+                          layer_llr[1],
                           rho_dl[llr_sym][1],
                           rho_dl[llr_sym][nl],
                           dl_valid_re[llr_sym],
@@ -1155,14 +1148,16 @@ int nr_rx_pdsch(PHY_VARS_NR_UE *ue,
                      nbRx,
                      rxdataF_comp[llr_sym],
                      llr_per_symbol,
-                     layer_llr[llr_sym]);
+                     layer_llr);
       }
-    }
-    stop_meas_nr_ue_phy(ue, DLSCH_LLR_STATS);
-    start_meas_nr_ue_phy(ue, DLSCH_LAYER_DEMAPPING);
-    nr_dlsch_layer_demapping(nl, dlsch->cw_info.qamModOrder, llr_per_symbol, layer_llr, dlsch_config, dl_valid_re, llr);
-    stop_meas_nr_ue_phy(ue, DLSCH_LAYER_DEMAPPING);
+      stop_meas_nr_ue_phy(ue, DLSCH_LLR_STATS);
 
+      start_meas_nr_ue_phy(ue, DLSCH_LAYER_DEMAPPING);
+      nr_dlsch_layer_demapping(nl, qamModOrder, llr_per_symbol, layer_llr, dl_valid_re[llr_sym], llr_out);
+      stop_meas_nr_ue_phy(ue, DLSCH_LAYER_DEMAPPING);
+      llr_out += dl_valid_re[llr_sym] * qamModOrder * nl;
+    }
+    
     if (UEScopeHasTryLock(ue)) {
       metadata mt = {.frame = proc->frame_rx, .slot = proc->nr_slot_rx };
       int total_valid_res = 0;

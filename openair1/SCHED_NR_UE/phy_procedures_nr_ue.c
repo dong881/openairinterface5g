@@ -1148,7 +1148,7 @@ void pdsch_processing(PHY_VARS_NR_UE *ue, const UE_nr_rxtx_proc_t *proc, nr_phy_
 
   bool slot_fep_map[14] = {0};
   const uint32_t rxdataF_sz = ue->frame_parms.samples_per_slot_wCP;
-  // Use pre-allocated heap buffer instead of a large stack VLA (up to 896 KB at 4 ant / mu=0).
+  // Use pre-allocated heap buffer instead of a large stack VLA (up to 896 KB at 4 ant).
   c16_t(*rxdataF)[rxdataF_sz] = (c16_t(*)[rxdataF_sz])ue->slot_rxdataF_buf;
 
   // do procedures for CSI-IM
