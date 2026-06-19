@@ -297,7 +297,7 @@ one_measurement_t test_ldpc(short max_iterations,
   impp.gen_code = 0;
   decode_abort_t dec_abort;
   init_abort(&dec_abort);
-  uint32_t **output32;
+  uint32_t **output32 = NULL;
   for (int trial = 0; trial < ntrials; trial++) {
     unsigned int segment_bler = 0;
     //// encoder
