@@ -861,6 +861,16 @@ int main(int argc, char **argv)
       g_rbSize += g_rb_ranges[r].size;
   }
 
+  /* nr_mac_add_test_ue() has created one user, so set the scheduling
+   * parameters from command line in global variables that will be picked up by
+   * scheduling preprocessor */
+  if (g_mcsIndex < 0)
+    g_mcsIndex = 9;
+  if (g_rbStart < 0)
+    g_rbStart=0;
+  if (g_rbSize < 0)
+    g_rbSize = N_RB_DL - g_rbStart;
+
   /* -U option modify DMRS */
   if(modify_dmrs) {
     update_dmrs_config(bwp, dmrs_arg);
@@ -869,9 +879,6 @@ int main(int argc, char **argv)
   if(enable_ptrs) {
     update_ptrs_config(bwp, &g_rbSize, &mcsIndex, ptrs_arg);
   }
-
-
-  //xer_fprint(stdout, &asn_DEF_NR_CellGroupConfig, (const void*)secondaryCellGroup);
 
   // UE dedicated configuration
   nr_mac_add_test_ue(RC.nrmac[0], rnti, secondaryCellGroup);
@@ -887,13 +894,6 @@ int main(int argc, char **argv)
   // stub to configure frame_parms
   //  nr_phy_config_request_sim(gNB,N_RB_DL,N_RB_DL,mu,Nid_cell,SSB_positions);
   // call MAC to configure common parameters
-
-  /* nr_mac_add_test_ue() has created one user, so set the scheduling
-   * parameters from command line in global variables that will be picked up by
-   * scheduling preprocessor */
-  if (g_mcsIndex < 0) g_mcsIndex = 9;
-  if (g_rbStart < 0) g_rbStart=0;
-  if (g_rbSize < 0) g_rbSize = N_RB_DL - g_rbStart;
 
   double fs,txbw,rxbw;
   get_samplerate_and_bw(mu,
