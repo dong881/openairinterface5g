@@ -201,6 +201,7 @@ function main() {
             shift;;
        --nrRU)
             NRRU=1
+            CMAKE_CMD="$CMAKE_CMD -DOAI_RU_FRONTHAUL=ON"
             TARGET_LIST="$TARGET_LIST nr-oru"
             echo_info "Will compile NR O-RU"
             shift;;
