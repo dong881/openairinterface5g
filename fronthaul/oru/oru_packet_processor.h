@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include "fh_compression.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -95,7 +96,8 @@ void *init_packet_processor(int numerology,
                             void (*send_mbufs)(void *io_controller, struct rte_mbuf **mbufs, uint32_t num_mbufs),
                             void *io_controller,
                             size_t mtu,
-                            int prach_eaxc_offset);
+                            int prach_eaxc_offset,
+                            fh_comp_method_t dl_comp_method);
 void write_ul_iq(void *context, uint32_t *rxdataF, int symbol, const ul_job_t *job);
 void write_prach_iq(void *context, uint32_t **txdataF, int nb_rx, int frame, int slot_in_frame, int symbol);
 void cleanup_packet_processor(void *context);

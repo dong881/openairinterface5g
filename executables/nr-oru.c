@@ -89,6 +89,7 @@
 #define CONFIG_STRING_T2A_UP "T2a_up"
 #define CONFIG_STRING_T2A_CP "T2a_cp"
 #define CONFIG_STRING_PRACH_EAXC_OFFSET "prach_eaxc_offset"
+#define CONFIG_STRING_COMP_TYPE         "comp_type"
 
 #define HLP_DPDK_DEVICES "DPDK devices to use for the O-RU."
 #define HLP_RX_CORE "The CPU core to be used to deploy dpdk RX worker for O-RU."
@@ -96,6 +97,7 @@
 #define HLP_DU_MAC_ADDRESSES "DU MAC addreses, used to prepare Ethernet headers."
 #define HLP_MTU "MTU for RX and TX."
 #define HLP_PRACH_EAXC_OFFSET "PRACH eAxC offset."
+#define HLP_COMP_TYPE         "DL U-plane compression method: 0=none 1=BFP 2=BLKSCALE 3=ULAW."
 
 // clang-format off
 #define CMDLINE_PARAMS_DESC_ORU_FH \
@@ -107,7 +109,8 @@
   {CONFIG_STRING_MTU,                        HLP_MTU,               0,                      .iptr=NULL,       .defintval=9600,              TYPE_INT,          0}, \
   {CONFIG_STRING_T2A_UP,                     "",                    0,                      .iptr=NULL,       .defintarrayval=NULL,         TYPE_INTARRAY,     0}, \
   {CONFIG_STRING_T2A_CP,                     "",                    0,                      .iptr=NULL,       .defintarrayval=NULL,         TYPE_INTARRAY,     0}, \
-  {CONFIG_STRING_PRACH_EAXC_OFFSET,          HLP_PRACH_EAXC_OFFSET, 0,                      .iptr=NULL,       .defintval=0,                 TYPE_INT,          0}  \
+  {CONFIG_STRING_PRACH_EAXC_OFFSET,          HLP_PRACH_EAXC_OFFSET, 0,                      .iptr=NULL,       .defintval=0,                 TYPE_INT,          0}, \
+  {CONFIG_STRING_COMP_TYPE,                  HLP_COMP_TYPE,         0,                      .iptr=NULL,       .defintval=0,                 TYPE_INT,          0}  \
 }
 // clang-format on
 
@@ -248,7 +251,7 @@ int get_oru_options(ORU_t *oru)
     fh_cfg->du_mac_addrs[i] = gpd(fh_param, nump, CONFIG_STRING_DU_MAC_ADDRESSES)->strlistptr[i];
     AssertFatal(strlen(fh_cfg->du_mac_addrs[i]) == 17, "Invalid MAC address\n");
   }
-  fh_cfg->enable_compression = false;
+  fh_cfg->comp_type = (fh_comp_method_t)*gpd(fh_param, nump, CONFIG_STRING_COMP_TYPE)->iptr;
   fh_cfg->rx_core = *gpd(fh_param, nump, CONFIG_STRING_RX_CORE)->iptr;
   fh_cfg->mtu = *gpd(fh_param, nump, CONFIG_STRING_MTU)->iptr;
   fh_cfg->num_prbs = oru->bw_tx[0];

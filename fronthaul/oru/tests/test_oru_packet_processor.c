@@ -69,7 +69,7 @@ void test_send_mbuf(void *io_controller, struct rte_mbuf **mbufs, uint32_t num_m
 void test_init_cleanup()
 {
   printf("Testing init and cleanup...\n");
-  void *ctx = init_packet_processor(1, 273, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0);
+  void *ctx = init_packet_processor(1, 273, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0, FH_COMP_NONE);
   assert(ctx != NULL);
   oru_packet_processor_stats_t stats;
   get_packet_processor_stats(ctx, &stats);
@@ -82,7 +82,7 @@ void test_init_cleanup()
 void test_cplane_timing_errors()
 {
   printf("Testing C-Plane timing errors...\n");
-  void *ctx = init_packet_processor(1, 273, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0);
+  void *ctx = init_packet_processor(1, 273, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0, FH_COMP_NONE);
   assert(ctx != NULL);
 
   // Set current symbol
@@ -142,7 +142,7 @@ void test_cplane_uplane_match()
   int slots_per_subframe = 1 << mu;
   // T2a_cp ranges: 200 to 400 us (approx 5 to 11 symbols)
   // T2a_up ranges: 100 to 300 us (approx 2 to 8 symbols)
-  void *ctx = init_packet_processor(mu, 273, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0);
+  void *ctx = init_packet_processor(mu, 273, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0, FH_COMP_NONE);
   assert(ctx != NULL);
 
   uint64_t current_sym = 1000;
@@ -256,7 +256,7 @@ void test_frame_wrap_around()
   printf("Testing frame wrap around...\n");
   int mu = 1; // 30kHz
   int slots_per_subframe = 1 << mu;
-  void *ctx = init_packet_processor(mu, 273, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0);
+  void *ctx = init_packet_processor(mu, 273, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0, FH_COMP_NONE);
   assert(ctx != NULL);
 
   // Total symbols = 5 slots * 14 = 70.
@@ -360,7 +360,7 @@ void test_cplane_14_symbols()
 {
   printf("Testing 1 C-plane message for 14 symbols...\n");
   int mu = 1; // 30kHz
-  void *ctx = init_packet_processor(mu, 273, 200, 400, 100, 300, 5, 0, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0);
+  void *ctx = init_packet_processor(mu, 273, 200, 400, 100, 300, 5, 0, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0, FH_COMP_NONE);
   assert(ctx != NULL);
 
   uint64_t current_sym = 1000;
@@ -479,7 +479,7 @@ void test_other_bw_4ant_prb_offset()
   printf("Testing other bandwidth, 4 antennas, and PRB offset...\n");
   int mu = 1; // 30kHz
   int num_prb = 106; // Different bandwidth
-  void *ctx = init_packet_processor(mu, num_prb, 200, 400, 100, 300, 4, 4, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0);
+  void *ctx = init_packet_processor(mu, num_prb, 200, 400, 100, 300, 4, 4, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0, FH_COMP_NONE);
   assert(ctx != NULL);
 
   uint64_t current_sym = 1000;
@@ -739,7 +739,7 @@ void test_uplink_basic()
   int num_prb = 100;
   g_packets_sent = 0;
   void *ctx =
-      init_packet_processor(mu, num_prb, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf_no_frag, NULL, 1500, 0);
+      init_packet_processor(mu, num_prb, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf_no_frag, NULL, 1500, 0, FH_COMP_NONE);
   assert(ctx != NULL);
 
   // Pattern: 5 slots, 2 DL, 2 UL. Symbols 0-27 DL, 42-69 UL.
@@ -815,7 +815,7 @@ void test_uplink_fragmentation()
   int num_prb = 100;
   g_packets_sent = 0;
   void *ctx =
-      init_packet_processor(mu, num_prb, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf_frag, NULL, 1500, 0);
+      init_packet_processor(mu, num_prb, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf_frag, NULL, 1500, 0, FH_COMP_NONE);
   assert(ctx != NULL);
 
   // Pattern: 5 slots, 2 DL, 2 UL. Symbols 0-27 DL, 42-69 UL.
@@ -906,7 +906,8 @@ void test_uplink_large_mtu()
                                     test_send_mbuf_large_mtu,
                                     NULL,
                                     9600,
-                                    0);
+                                    0,
+                                    FH_COMP_NONE);
   assert(ctx != NULL);
 
   // Pattern: 5 slots, 2 DL, 2 UL. Symbols 0-27 DL, 42-69 UL.
@@ -996,7 +997,8 @@ void test_uplink_prb_offset()
                                     test_send_mbuf_prb_offset,
                                     NULL,
                                     1500,
-                                    0);
+                                    0,
+                                    FH_COMP_NONE);
   assert(ctx != NULL);
 
   // Pattern: 5 slots, 2 DL, 2 UL. Symbols 0-27 DL, 42-69 UL.
@@ -1086,7 +1088,8 @@ void test_prach_generation()
                                     test_send_mbuf_prach,
                                     NULL,
                                     1500,
-                                    prach_eaxc_offset);
+                                    prach_eaxc_offset,
+                                    FH_COMP_NONE);
   assert(ctx != NULL);
 
   // Pattern: 5 slots, 2 DL, 2 UL. Symbols 0-27 DL, 42-69 UL.
@@ -1158,7 +1161,7 @@ void test_hyper_frame_calculation()
   printf("Testing hyper-frame calculation...\n");
   int mu = 1; // 30kHz
   int slots_per_subframe = 1 << mu;
-  void *ctx = init_packet_processor(mu, 273, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0);
+  void *ctx = init_packet_processor(mu, 273, 200, 400, 100, 300, 2, 2, 0, 0, 5, test_alloc_mbuf, test_send_mbuf, NULL, 1500, 0, FH_COMP_NONE);
   assert(ctx != NULL);
 
   int num_symbols_per_frame = 10 * slots_per_subframe * 14; // 280

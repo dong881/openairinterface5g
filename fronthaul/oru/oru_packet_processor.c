@@ -59,6 +59,8 @@ typedef struct {
   int expected_iq;
   int received_iq;
   uint64_t absolute_symbol;
+  fh_comp_method_t comp_method;
+  uint8_t iq_width;
 } dl_symbol_job_t;
 
 typedef struct {
@@ -69,6 +71,8 @@ typedef struct {
   int num_prb;
   int start_prb;
   int filter_id;
+  fh_comp_method_t comp_method;
+  uint8_t iq_width;
 } prach_job_t;
 typedef struct {
   _Atomic(uint64_t) dl_tdd_mismatch;
@@ -117,6 +121,7 @@ typedef struct {
   void *io_controller;
   _Atomic(uint8_t) pusch_seq_id[MAX_ANTENNAS];
   size_t mtu;
+  fh_comp_method_t dl_comp_method;
 } oru_packet_processor_context_t;
 
 static inline void set_bit(uint8_t *bits, uint64_t bit)
@@ -153,7 +158,8 @@ void *init_packet_processor(int numerology,
                             send_func_t send_func,
                             void *io_controller,
                             size_t mtu,
-                            int prach_eaxc_offset)
+                            int prach_eaxc_offset,
+                            fh_comp_method_t dl_comp_method)
 {
   oru_packet_processor_context_t *ctx = calloc(1, sizeof(*ctx));
   ctx->alloc_func = alloc_func;
@@ -164,6 +170,7 @@ void *init_packet_processor(int numerology,
   ctx->numerology = numerology;
   ctx->mtu = mtu;
   ctx->prach_eaxc_offset = prach_eaxc_offset;
+  ctx->dl_comp_method = dl_comp_method;
   uint32_t slots_per_subframe = 1 << numerology;
   uint32_t symbol_duration_uS = 1000 / slots_per_subframe / NR_SYMBOLS_PER_SLOT;
   ctx->T2a_min_cp_sym_diff = T2a_cp_min_uS / symbol_duration_uS;
@@ -314,7 +321,7 @@ void handle_uplane_packet(void *context, void *pkt)
   uint16_t sym_inc;
   uint16_t rb;
   uint16_t sect_id;
-  int expect_comp = 0;
+  const bool has_comp_hdr = ctx->dl_comp_method != FH_COMP_NONE;
   uint8_t staticComp = 0;
   uint8_t compMeth = 0;
   uint8_t iqWidth = 0;
@@ -334,7 +341,7 @@ void handle_uplane_packet(void *context, void *pkt)
                                     &sym_inc,
                                     &rb,
                                     &sect_id,
-                                    expect_comp,
+                                    has_comp_hdr,
                                     staticComp,
                                     &compMeth,
                                     &iqWidth);
@@ -362,7 +369,6 @@ void handle_uplane_packet(void *context, void *pkt)
         compMeth,
         iqWidth);
 
-  AssertFatal(compMeth == 0, "Compression not supported\n");
   int mu = ctx->numerology;
   int slots_per_subframe = 1 << mu;
   int num_symbols_per_frame = NR_NUMBER_OF_SUBFRAMES_PER_FRAME * slots_per_subframe * NR_SYMBOLS_PER_SLOT;
@@ -417,6 +423,8 @@ void handle_uplane_packet(void *context, void *pkt)
     rte_pktmbuf_free(pkt);
   }
   job->received_iq += num_prbu == 0 ? ctx->num_prb : num_prbu;
+  job->comp_method = (fh_comp_method_t)compMeth;
+  job->iq_width = iqWidth == 0 ? 16 : iqWidth;
   if (job->expected_iq == job->received_iq) {
     try_push_symbol_job(ctx, target_absolute_symbol);
   }
@@ -470,6 +478,8 @@ static void handle_dl_cplane_packet(oru_packet_processor_context_t *ctx,
       job->absolute_symbol = target_absolute_symbol + i;
       job->expected_iq = 0;
       job->received_iq = 0;
+      job->comp_method = FH_COMP_NONE;
+      job->iq_width = 16;
       for (int j = 0; j < MAX_ANTENNAS; j++) {
         job->per_antenna[j].cplane_received = false;
         job->per_antenna[j].num_rx_fragments = 0;
@@ -492,6 +502,8 @@ static void handle_dl_cplane_packet(oru_packet_processor_context_t *ctx,
     }
     job->per_antenna[ant_id].section_id = section->hdr.u1.common.sectionId;
     job->expected_iq += section->hdr.u1.common.numPrbc == 0 ? ctx->num_prb : section->hdr.u1.common.numPrbc;
+    job->comp_method = (fh_comp_method_t)hdr->udComp.udCompMeth;
+    job->iq_width = hdr->udComp.udIqWidth == 0 ? 16 : hdr->udComp.udIqWidth;
   }
 }
 
@@ -616,6 +628,8 @@ void handle_prach_cplane_packet(oru_packet_processor_context_t *ctx,
   job->num_prb = section->hdr.u1.common.numPrbc == 0 ? ctx->num_prb : section->hdr.u1.common.numPrbc;
   job->start_prb = section->hdr.u1.common.startPrbc;
   job->filter_id = hdr->cmnhdr.field.filterIndex;
+  job->comp_method = (fh_comp_method_t)hdr->udComp.udCompMeth;
+  job->iq_width = hdr->udComp.udIqWidth == 0 ? 16 : hdr->udComp.udIqWidth;
   RATELIMIT(PRACH_ERR_LOG_RATELIMIT, {
     LOG_A(HW,
           "PRACH JOB added slot_in_frame %d, aarx %d target_absolute_symbol %lu\n",
@@ -825,12 +839,18 @@ void get_packet_processor_stats(void *context, oru_packet_processor_stats_t *out
   }
 }
 
-static void unpack_iq(c16_t *txdataF, void *iqdata, int start_prb, int num_prb)
+static void unpack_iq(c16_t *txdataF, const void *iqdata, int start_prb, int num_prb,
+                      fh_comp_method_t comp_method, uint8_t iq_width)
 {
-  uint16_t *source = (uint16_t *)iqdata;
-  uint16_t *destination = (uint16_t *)&txdataF[start_prb * NR_NB_SC_PER_RB];
-  for (int j = 0; j < num_prb * NR_NB_SC_PER_RB * 2; j++) {
-    destination[j] = rte_bswap16(source[j]);
+  if (comp_method != FH_COMP_NONE) {
+    fh_decompress_prbs(comp_method, iq_width, num_prb,
+                       (const int8_t *)iqdata,
+                       (int16_t *)&txdataF[start_prb * NR_NB_SC_PER_RB]);
+  } else {
+    const uint16_t *source = (const uint16_t *)iqdata;
+    uint16_t *destination = (uint16_t *)&txdataF[start_prb * NR_NB_SC_PER_RB];
+    for (int j = 0; j < num_prb * NR_NB_SC_PER_RB * 2; j++)
+      destination[j] = rte_bswap16(source[j]);
   }
 }
 
@@ -863,7 +883,9 @@ void read_dl_iq(void *context, uint32_t **txdataF, int nb_tx, uint64_t *hyper_fr
       unpack_iq((c16_t *)txdataF[aatx],
                 job->per_antenna[aatx].rx_fragments[k].iq_data,
                 job->per_antenna[aatx].rx_fragments[k].start_prbc,
-                job->per_antenna[aatx].rx_fragments[k].num_prbc);
+                job->per_antenna[aatx].rx_fragments[k].num_prbc,
+                job->comp_method,
+                job->iq_width);
       if (job->per_antenna[aatx].rx_fragments[k].mbuf) {
         rte_pktmbuf_free(job->per_antenna[aatx].rx_fragments[k].mbuf);
       }
@@ -990,7 +1012,9 @@ void write_ul_iq(void *context, uint32_t *rxdataF, int symbol, const ul_job_t *j
   if (use_comp) {
     overhead += sizeof(struct data_section_compression_hdr);
   }
-  int max_prb_per_packet = (int)((ctx->mtu - overhead) / (NR_NB_SC_PER_RB * sizeof(int32_t)));
+  const size_t prb_bytes = use_comp ? (size_t)FH_COMP_PRB_BYTES(job->response_payload.iq_width)
+                                    : (size_t)(NR_NB_SC_PER_RB * sizeof(int32_t));
+  int max_prb_per_packet = (int)((ctx->mtu - overhead) / prb_bytes);
 
   while (rbs_sent < total_ul_rbs) {
     int num_ul_rbs = total_ul_rbs - rbs_sent;
@@ -1009,7 +1033,8 @@ void write_ul_iq(void *context, uint32_t *rxdataF, int symbol, const ul_job_t *j
       header_length += sizeof(struct data_section_compression_hdr);
     }
     const uint num_sc = num_ul_rbs * NR_NB_SC_PER_RB;
-    size_t data_len = sizeof(int32_t) * num_sc;
+    size_t data_len = use_comp ? (size_t)FH_COMP_PRB_BYTES(job->response_payload.iq_width) * num_ul_rbs
+                               : (size_t)sizeof(int32_t) * num_sc;
 
     char *buf = rte_pktmbuf_append(pkt, (uint16_t)(header_length + data_len));
     if (buf == NULL) {
@@ -1046,10 +1071,18 @@ void write_ul_iq(void *context, uint32_t *rxdataF, int symbol, const ul_job_t *j
       iq_data_start = (void *)(data_section_header + 1);
     }
 
-    uint16_t *src = (uint16_t *)&rxdataF[(start_prb_base + rbs_sent) * NR_NB_SC_PER_RB];
-    uint16_t *dst = (uint16_t *)iq_data_start;
-    for (int i = 0; i < num_sc * 2; i++) {
-      *dst++ = rte_cpu_to_be_16(*src++);
+    const int16_t *src = (const int16_t *)&rxdataF[(start_prb_base + rbs_sent) * NR_NB_SC_PER_RB];
+    if (use_comp) {
+      fh_compress_prbs((fh_comp_method_t)job->response_payload.comp_method,
+                       job->response_payload.iq_width,
+                       num_ul_rbs,
+                       src,
+                       (int8_t *)iq_data_start);
+    } else {
+      const uint16_t *raw = (const uint16_t *)src;
+      uint16_t *dst = (uint16_t *)iq_data_start;
+      for (int i = 0; i < num_sc * 2; i++)
+        dst[i] = rte_cpu_to_be_16(raw[i]);
     }
     rbs_sent += num_ul_rbs;
   }
@@ -1130,9 +1163,13 @@ void write_prach_iq(void *context, uint32_t **txdataF, int nb_rx, int frame, int
       continue;
     }
 
+    const bool prach_compressed = job->comp_method != FH_COMP_NONE;
     size_t header_length = sizeof(struct xran_ecpri_hdr) + sizeof(struct radio_app_common_hdr) + sizeof(struct data_section_hdr);
+    if (prach_compressed)
+      header_length += sizeof(struct data_section_compression_hdr);
     const uint prach_length = 139;
-    size_t data_len = sizeof(int32_t) * prach_length;
+    size_t data_len = prach_compressed ? (size_t)FH_COMP_PRB_BYTES(job->iq_width) * FH_PRACH_NUM_PRBS
+                                       : (size_t)sizeof(int32_t) * prach_length;
 
     char *buf = rte_pktmbuf_append(pkt, (uint16_t)(header_length + data_len));
     if (buf == NULL) {
@@ -1163,11 +1200,22 @@ void write_prach_iq(void *context, uint32_t **txdataF, int nb_rx, int frame, int
     struct data_section_hdr *data_section_header = (struct data_section_hdr *)(radio_app_header + 1);
     fill_data_section_header(data_section_header, num_ul_rbs, start_prb, section_id);
 
-    void *iq_data_start = (void *)(data_section_header + 1);
-    uint16_t *src = (uint16_t *)txdataF[aarx];
-    uint16_t *dst = (uint16_t *)iq_data_start;
-    for (int i = 0; i < prach_length * 2; i++) {
-      *dst++ = rte_cpu_to_be_16(*src++);
+    void *iq_data_start;
+    if (prach_compressed) {
+      struct data_section_compression_hdr *comp_hdr =
+          (struct data_section_compression_hdr *)(data_section_header + 1);
+      comp_hdr->ud_comp_hdr.ud_comp_meth = job->comp_method;
+      comp_hdr->ud_comp_hdr.ud_iq_width = XRAN_CONVERT_IQWIDTH(job->iq_width);
+      comp_hdr->rsrvd = 0;
+      iq_data_start = (void *)(comp_hdr + 1);
+      fh_compress_prach(job->comp_method, job->iq_width,
+                        (const int16_t *)txdataF[aarx], (int8_t *)iq_data_start);
+    } else {
+      iq_data_start = (void *)(data_section_header + 1);
+      const uint16_t *raw = (const uint16_t *)txdataF[aarx];
+      uint16_t *dst = (uint16_t *)iq_data_start;
+      for (int i = 0; i < prach_length * 2; i++)
+        dst[i] = rte_cpu_to_be_16(raw[i]);
     }
   }
 

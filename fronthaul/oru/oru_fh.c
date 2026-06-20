@@ -68,7 +68,8 @@ static void timer_cb(uint64_t s_abs, void *user_data)
 
 void *oru_fh_init(oru_fh_config_t *cfg)
 {
-  AssertFatal(cfg->enable_compression == false, "IQ compression not supported\n");
+  AssertFatal(cfg->comp_type < FH_COMP_NUM_METHODS,
+              "comp_type %d out of range [0..%d]\n", cfg->comp_type, FH_COMP_NUM_METHODS - 1);
 
   char *argv[64];
   int argc = 0;
@@ -206,7 +207,8 @@ void *oru_fh_init(oru_fh_config_t *cfg)
                                                (send_func_t)oru_io_send_uplane,
                                                &fh->io,
                                                cfg->mtu,
-                                               cfg->prach_eaxc_offset);
+                                               cfg->prach_eaxc_offset,
+                                               cfg->comp_type);
 
   return fh;
 }
