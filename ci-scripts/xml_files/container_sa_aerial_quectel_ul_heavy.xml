@@ -16,10 +16,10 @@
   <testCase>
     <class>Custom_Script</class>
     <always_exec>true</always_exec>
-    <desc>Configure 100 MHz bandwidth on WNC RU</desc>
+    <desc>Configure 100 MHz bandwidth and set the DGX3 MAC address on WNC RU</desc>
     <node>gracehopper1-oai</node>
-    <script>scripts/set-wnc-bandwidth.sh</script>
-    <args>100</args>
+    <script>scripts/set-wnc-params.sh</script>
+    <args>100 4c:bb:47:7e:58:aa</args>
   </testCase>
 
   <testCase>
