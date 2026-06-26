@@ -416,6 +416,17 @@ static void dl_symbol_process(RU_t *ru, int frame, int slot, int symbol, c16_t *
   tx_rf_symbols(ru, frame, slot, timestamp, symbol, 1);
 }
 
+static void set_dl_symbol_beam_ids(RU_t *ru, int slot, int symbol, const uint16_t *beam_ids)
+{
+  if (!ru->common.beam_id || !beam_ids)
+    return;
+
+  NR_DL_FRAME_PARMS *fp = ru->nr_frame_parms;
+  int symbol_in_frame = slot * fp->symbols_per_slot + symbol;
+  for (int aatx = 0; aatx < ru->nb_tx; aatx++)
+    ru->common.beam_id[symbol_in_frame][aatx] = beam_ids[aatx];
+}
+
 void *oru_north_read_thread(void *arg)
 {
   ORU_t *oru = (ORU_t *)arg;
@@ -443,7 +454,8 @@ void *oru_north_read_thread(void *arg)
   while (!oai_exit) {
     int frame = -1, slot = -1, symbol = -1;
     uint64_t hyper_frame;
-    int ret = oru_fh_tx_read_symbol(oru->fronthaul, (uint32_t **)txDataF_ptr, ru->nb_tx, &hyper_frame, &frame, &slot, &symbol);
+    uint16_t beam_ids[ru->nb_tx];
+    int ret = oru_fh_tx_read_symbol(oru->fronthaul, (uint32_t **)txDataF_ptr, ru->nb_tx, &hyper_frame, &frame, &slot, &symbol, beam_ids);
     if (ret != 0) {
       LOG_E(PHY, "[RU_thread] read data error: frame %d, slot %d, symbol %d\n", frame, slot, symbol);
       continue;
@@ -457,6 +469,7 @@ void *oru_north_read_thread(void *arg)
     if (timestamp < 0) {
       continue;
     }
+    set_dl_symbol_beam_ids(ru, slot, symbol, beam_ids);
     dl_symbol_process(ru, frame, slot, symbol, txDataF_ptr, timestamp);
     if (frame % 256 == 0 && slot == 0 && symbol == 0) {
       LOG_I(PHY, "[RU_thread] read data: frame %d, slot %d, symbol %d\n", frame, slot, symbol);
