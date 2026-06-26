@@ -405,24 +405,19 @@ int nrue_ru_read(PHY_VARS_NR_UE *UE, openair0_timestamp_t *ptimestamp, void **bu
   read_data_t *rd = &ru->rd;
 
   if (ru->nb_clients > 1 && !rd->last_timestamp) {
-    AssertFatal(!pthread_mutex_init(&rd->mread, NULL), "");
-    AssertFatal(!pthread_mutex_lock(&rd->mread), "");
-    rd->sz = UE->frame_parms.samples_per_frame;
+    int ret = pthread_mutex_init(&rd->mread, NULL);
+    AssertFatal(!ret, "errno: %s\n", strerror(ret));
+    ret = pthread_mutex_lock(&rd->mread);
+    AssertFatal(!ret, "errno: %s\n", strerror(ret));
+    rd->sz = ceil_mod(UE->frame_parms.samples_per_frame, PAGE_SIZE / sizeof(c16_t));
     rd->grain = 2048; // arbitrary read size, cosen to fit in a ethernet jumbo frame
     rd->last_timestamp = calloc(ru->nb_clients, sizeof(*rd->last_timestamp));
     rd->rxbuf = calloc(ru->nb_rx, sizeof(*rd->rxbuf));
     for (int i = 0; i < ru->nb_rx; i++) {
-      int sz_bytes = rd->sz * sizeof(c16_t);
-      // get a temporary file fd
-      const int fd = fileno(tmpfile());
-      // set it's size appropriately. We need exactly `sz` bytes as underlying memory
-      ftruncate(fd, sz_bytes);
-      rd->rxbuf[i] = mmap(NULL, 2 * sz_bytes, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-      mmap(rd->rxbuf[i], sz_bytes, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);
-      mmap(rd->rxbuf[i] + rd->sz, sz_bytes, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);
-      close(fd);
+      rd->rxbuf[i] = create_ring(rd->sz * sizeof(c16_t));
     }
-    AssertFatal(!pthread_mutex_unlock(&rd->mread), "");
+    ret = pthread_mutex_unlock(&rd->mread);
+    AssertFatal(!ret, "errno: %s\n", strerror(ret));
     LOG_I(PHY, "multi read init done\n");
   }
 
@@ -438,7 +433,7 @@ int nrue_ru_read(PHY_VARS_NR_UE *UE, openair0_timestamp_t *ptimestamp, void **bu
         if (min > rd->last_timestamp[i])
           min = rd->last_timestamp[i];
       if (min == rd->last_timestamp[this_ue]) {
-        AssertFatal(nsamps < rd->sz, "");
+        AssertFatal(nsamps < rd->sz, "too large write for the ring buffer %d %d\n", nsamps, rd->sz);
         // acquire enough blocks to be above the need end
         while (rd->last_ts < rd->last_timestamp[this_ue] + nsamps) {
           openair0_timestamp_t tmp_timestamp;
@@ -446,7 +441,7 @@ int nrue_ru_read(PHY_VARS_NR_UE *UE, openair0_timestamp_t *ptimestamp, void **bu
           for (int i = 0; i < ru->nb_rx; i++)
             tmp[i] = rd->rxbuf[i] + (rd->last_ts % rd->sz);
           ret = dev->trx_read_func(dev, &tmp_timestamp, tmp, rd->grain, num_antennas);
-          AssertFatal(ret == rd->grain, "");
+          AssertFatal(ret == rd->grain, "wrote to rf board failed %d", ret);
           rd->last_ts = tmp_timestamp + ret;
           if (!dev->firstTS_initialized) {
             dev->firstTS = tmp_timestamp;
@@ -460,7 +455,8 @@ int nrue_ru_read(PHY_VARS_NR_UE *UE, openair0_timestamp_t *ptimestamp, void **bu
         LOG_D(PHY, "ue %d sent %d samples for ts %ld\n", this_ue, nsamps, rd->last_timestamp[this_ue]);
         *ptimestamp = rd->last_timestamp[this_ue] - dev->firstTS;
         rd->last_timestamp[this_ue] += nsamps;
-        AssertFatal(!pthread_mutex_unlock(&rd->mread), "");
+        int ret = pthread_mutex_unlock(&rd->mread);
+        AssertFatal(!ret, "errno: %s\n", strerror(ret));
         return nsamps;
       } else {
         pthread_mutex_unlock(&rd->mread);
@@ -548,6 +544,5 @@ void nrue_ru_write_reorder_clear_context(PHY_VARS_NR_UE *UE)
 {
   openair0_device_t *device = &nrue_rus.openair0_dev[UE->rf_map.card];
   LOG_W(HW, "[UE %d] received write reorder clear context\n", UE->Mod_id);
-  if (!IS_SOFTMODEM_RFSIM)
-    openair0_write_reorder_clear_context(device);
+  openair0_write_reorder_clear_context(device);
 }

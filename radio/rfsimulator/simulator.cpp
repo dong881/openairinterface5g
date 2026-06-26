@@ -988,11 +988,7 @@ static int rfsimulator_write_internal(rfsimulator_state_t *t,
     LOG_W(HW, "Not supported to send Tx out of order %lu, %lu\n", t->lastWroteTS, timestamp);
 
   if ((flags != TX_BURST_START) && (flags != TX_BURST_START_AND_END) && (t->lastWroteTS < timestamp))
-    LOG_W(HW,
-          "Gap in writing to USRP: last written %lu, now %lu, gap %lu\n",
-          t->lastWroteTS,
-          timestamp,
-          timestamp - t->lastWroteTS);
+    LOG_W(HW, "Gap in writing to rf : last written %lu, now %lu, gap %lu\n", t->lastWroteTS, timestamp, timestamp - t->lastWroteTS);
 
   t->lastWroteTS = timestamp + nsamps;
   mutexunlock(t->Sockmutex);

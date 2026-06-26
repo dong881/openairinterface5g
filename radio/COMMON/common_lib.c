@@ -109,6 +109,35 @@ int load_lib(openair0_device_t *device, openair0_config_t *openair0_cfg, eth_par
   return ((devfunc_t)shlib_fdesc.fptr)(device, openair0_cfg, eth_cfg);
 }
 
+void *create_ring(int sz_bytes)
+{
+  AssertFatal(sz_bytes % PAGE_SIZE == 0, "must be a number of pages %d", sz_bytes);
+  // get a temporary file fd
+  const int fd = fileno(tmpfile());
+  // set it's size appropriately. We need exactly `sz` bytes as underlying memory
+  if (ftruncate(fd, sz_bytes))
+    AssertFatal(false, "errno: %s\n", strerror(errno));
+  void *ret = mmap(NULL, 2 * sz_bytes, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  mmap(ret, sz_bytes, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);
+  mmap(ret + sz_bytes, sz_bytes, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0);
+  close(fd);
+  return ret;
+}
+
+static void init_reorder(re_order_t *r, openair0_config_t *openair0_cfg)
+{
+  pthread_mutex_init(&r->mutex_store, NULL);
+  pthread_mutex_init(&r->mutex_write, NULL);
+
+  r->sz = ceil_mod(openair0_cfg->sample_rate / 100, PAGE_SIZE / sizeof(int)); // 10 ms storage
+  r->grain = 2048; // arbitrary read size, chosen to fit in a ethernet jumbo frame
+  r->nb_writers = create_ring(r->sz * sizeof(*r->nb_writers));
+
+  r->ring = calloc(openair0_cfg->tx_num_channels, sizeof(*r->ring));
+  for (int i = 0; i < openair0_cfg->tx_num_channels; i++)
+    r->ring[i] = create_ring(r->sz * sizeof(c16_t));
+}
+
 int openair0_device_load(openair0_device_t *device, openair0_config_t *openair0_cfg)
 {
   int rc=0;
@@ -122,8 +151,7 @@ int openair0_device_load(openair0_device_t *device, openair0_config_t *openair0_
   } else {
     AssertFatal(false, "can't open the radio device: %s\n", get_devname(device->type));
   }
-  pthread_mutex_init(&device->reOrder.mutex_store, NULL);
-  pthread_mutex_init(&device->reOrder.mutex_write, NULL);
+  init_reorder(&device->reOrder, openair0_cfg);
   return rc;
 }
 
@@ -141,132 +169,6 @@ int openair0_transport_load(openair0_device_t *device, openair0_config_t *openai
   return rc;
 }
 
-static void
-add_new_buff(re_order_t *ctx, openair0_timestamp_t timestamp, void **txp, int nsamps, int nb_writers, int nbAnt, int flags)
-{
-  struct reorder_queue *i = ctx->queue;
-  struct reorder_queue *end = i + WRITE_QUEUE_SZ;
-  for (i = ctx->queue; i < end; i++) {
-    if (!i->active) {
-      LOG_D(HW, "Creating one ue signal for ts %ld, nsamps %d, nb writers %d\n", timestamp, nsamps, nb_writers);
-      *i = (struct reorder_queue){.timestamp = timestamp,
-                                  .active = true,
-                                  .nsamps = nsamps,
-                                  .nbAnt = nbAnt,
-                                  .flags = flags,
-                                  .nb_writers = nb_writers,
-                                  .already_wrote = 1};
-      i->txp = malloc(nbAnt * sizeof(c16_t *));
-      i->txp[0] = malloc(nbAnt * nsamps * sizeof(c16_t));
-      memcpy(i->txp[0], txp[0], nsamps * sizeof(c16_t));
-      for (int j = 1; j < nbAnt; j++) {
-        i->txp[j] = i->txp[0] + nsamps;
-        memcpy(i->txp[j], txp[j], nsamps * sizeof(c16_t));
-      }
-      break;
-    }
-  }
-  AssertFatal(i < end, "Write queue full\n");
-}
-
-static void
-writerEnqueue(re_order_t *ctx, openair0_timestamp_t timestamp, void **txp, int nsamps, int nb_writers, int nbAnt, int flags)
-{
-  AssertFatal(nb_writers, "");
-  AssertFatal(nbAnt, "");
-
-  pthread_mutex_lock(&ctx->mutex_store);
-  LOG_D(HW, "Enqueue write for TS: %lu\n", timestamp);
-  struct reorder_queue *i = ctx->queue;
-  struct reorder_queue *end = i + WRITE_QUEUE_SZ;
-  if (nb_writers > 1) {
-    // search existing block
-    for (i = ctx->queue; i < end; i++) {
-      if (i->active && i->timestamp == timestamp && i->nsamps == nsamps) {
-        AssertFatal(i->nbAnt = nbAnt && i->nb_writers == nb_writers, "");
-        if (i->nsamps == nsamps && i->timestamp == timestamp) {
-          LOG_D(HW, "Adding one ue signal for ts %ld, nsamps %d, %d/%d\n", timestamp, nsamps, i->already_wrote, nb_writers);
-          i->already_wrote++;
-          for (int j = 0; j < nbAnt; j++) {
-            c16_t *buf = (c16_t *)i->txp[j];
-            c16_t *in = (c16_t *)txp[j];
-            for (int k = 0; k < nsamps; k++)
-              buf[k] = c16add(buf[k], in[k]);
-          }
-        } else {
-          AssertFatal(false, "Need to split block\n");
-        }
-        break;
-      }
-    }
-    if (i == end)
-      add_new_buff(ctx, timestamp, txp, nsamps, nb_writers, nbAnt, flags);
-  } else {
-    for (i = ctx->queue; i < end; i++) {
-      if (!i->active) {
-        i->timestamp = timestamp;
-        i->active = true;
-        i->nsamps = nsamps;
-        i->nbAnt = nbAnt;
-        i->flags = flags;
-        AssertFatal(nbAnt <= NB_ANTENNAS_TX, "");
-        for (int j = 0; j < nbAnt; j++)
-          i->txp[j] = txp[j];
-        break;
-      }
-    }
-    AssertFatal(i < end, "Write queue full\n");
-  }
-  pthread_mutex_unlock(&ctx->mutex_store);
-}
-
-static void writerProcessWaitingQueue(nrue_ru_write_t nrue_ru_write, PHY_VARS_NR_UE *UE, openair0_device_t *device)
-{
-  bool found = false;
-  re_order_t *ctx = &device->reOrder;
-  do {
-    found = false;
-    pthread_mutex_lock(&ctx->mutex_store);
-    for (struct reorder_queue *i = ctx->queue; i < ctx->queue + WRITE_QUEUE_SZ; i++) {
-      if (i->active && i->nb_writers == i->already_wrote && llabs(i->timestamp - ctx->nextTS) < MAX_GAP) {
-        openair0_timestamp_t timestamp = i->timestamp;
-        LOG_D(HW, "Dequeue write for TS: %lu\n", timestamp);
-        int nsamps = i->nsamps;
-        int nbAnt = i->nbAnt;
-        int flags = i->flags;
-        int nb_writers = i->nb_writers;
-        void **txpp = i->txp;
-        void *txp[NB_ANTENNAS_TX];
-        AssertFatal(nbAnt <= NB_ANTENNAS_TX, "");
-        for (int j = 0; j < nbAnt; j++) {
-          txp[j] = i->txp[j];
-          i->txp[j] = NULL;
-        }
-        i->active = false;
-        pthread_mutex_unlock(&ctx->mutex_store);
-        found = true;
-        LOG_D(HW, "sending for ts %ld, nsamps %d, flags %d, rfsim %d\n", timestamp, nsamps, flags, IS_SOFTMODEM_RFSIM);
-        if (flags || IS_SOFTMODEM_RFSIM) {
-          int wroteSamples;
-          if (nrue_ru_write)
-            wroteSamples = nrue_ru_write(UE, timestamp, txp, nsamps, nbAnt, flags);
-          else
-            wroteSamples = device->trx_write_func(device, timestamp, txp, nsamps, nbAnt, flags);
-          if (wroteSamples != nsamps)
-            LOG_W(HW, "Failed to write to RF: wrote %d out of %d samples\n", wroteSamples, nsamps);
-        }
-        ctx->nextTS = timestamp + nsamps;
-        if (nb_writers > 1) {
-          free(txp[0]);
-          free(txpp);
-        }
-        pthread_mutex_lock(&ctx->mutex_store);
-      }
-    }
-    pthread_mutex_unlock(&ctx->mutex_store);
-  } while (found);
-}
-
 // mutex (or atomic flags) will be mandatory because this out order system root cause is there are several writer threads
 int openair0_write_reorder_common(nrue_ru_write_t nrue_ru_write,
                                   PHY_VARS_NR_UE *UE,
@@ -278,46 +180,71 @@ int openair0_write_reorder_common(nrue_ru_write_t nrue_ru_write,
                                   int nbAnt,
                                   int flags)
 {
-  int wroteSamples = 0;
   re_order_t *ctx = &device->reOrder;
-  LOG_D(HW, "received write order ts: %lu, nb samples %d, next ts %luflags %d\n", timestamp, nsamps, timestamp + nsamps, flags);
-  pthread_mutex_lock(&ctx->mutex_store);
-  if (!ctx->initDone) {
-    ctx->nextTS = timestamp;
-    for (int i = 0; i < WRITE_QUEUE_SZ; i++) {
-      ctx->queue[i].txp = malloc(sizeof(void *) * NB_ANTENNAS_TX);
+  LOG_D(HW,
+        "received write order ts: %lu + %lu, nb samples %d, next ts %lu flags %d\n",
+        timestamp,
+        device->firstTS,
+        nsamps,
+        timestamp + nsamps,
+        flags);
+
+  // Add data in the ring buffer
+  if (pthread_mutex_lock(&ctx->mutex_store) == 0) {
+    if (!ctx->initDone) {
+      ctx->nextTS = timestamp;
+      ctx->ts_per_writer = calloc(nb_writers, sizeof(*ctx->ts_per_writer));
+      ctx->initDone = true;
     }
-    ctx->initDone = true;
+    // We have the write exclusivity
+    AssertFatal(nb_writers, "no UE writers, the minimum is 1");
+    AssertFatal(nbAnt, "no tx antennas, the minimum is 1");
+    int buff_index = timestamp % ctx->sz;
+    for (int a = 0; a < nbAnt; a++) {
+      c16_t *in = txp[a];
+      c16_t *out = ((c16_t *)ctx->ring[a]) + buff_index;
+      for (int i = 0; i < nsamps; i++) {
+        csum(out[i], out[i], in[i]);
+      }
+    }
+    for (int i = 0; i < nsamps; i++)
+      ctx->nb_writers[buff_index + i]++;
+    ctx->ts_per_writer[0] = timestamp + nsamps;
+  }
+
+  // check it we have ready output now
+  int buff_index = ctx->nextTS % ctx->sz;
+  int end = buff_index;
+  const int grain = ctx->grain;
+  while (ctx->nb_writers[end] >= nb_writers)
+    end++;
+
+  if (end - buff_index > grain) {
+    pthread_mutex_lock(&ctx->mutex_write);
+    while (buff_index + grain <= end) {
+      LOG_D(HW, "sending to RF: %ld\n", timestamp);
+      if (flags || IS_SOFTMODEM_RFSIM) {
+        void *ptr[nbAnt];
+        for (int a = 0; a < nbAnt; a++)
+          ptr[a] = ((c16_t *)ctx->ring[a]) + buff_index;
+        int wroteSamples;
+        if (nrue_ru_write)
+          wroteSamples = nrue_ru_write(UE, ctx->nextTS, ptr, grain, nbAnt, flags);
+        else
+          wroteSamples = device->trx_write_func(device, ctx->nextTS, ptr, grain, nbAnt, flags);
+        if (wroteSamples != grain)
+          LOG_W(HW, "Failed to write to RF: wrote %d out of %d samples\n", wroteSamples, grain);
+      }
+      for (int a = 0; a < nbAnt; a++)
+        memset(((c16_t *)ctx->ring[a]) + buff_index, 0, grain * sizeof(c16_t));
+      memset(ctx->nb_writers + buff_index, 0, grain * sizeof(*ctx->nb_writers));
+      buff_index += grain;
+      ctx->nextTS += grain;
+      timestamp += grain;
+    }
+    pthread_mutex_unlock(&ctx->mutex_write);
   }
   pthread_mutex_unlock(&ctx->mutex_store);
-  if (pthread_mutex_trylock(&ctx->mutex_write) == 0) {
-    // We have the write exclusivity
-    AssertFatal(nb_writers, "");
-    AssertFatal(nbAnt, "");
-    if (llabs(timestamp - ctx->nextTS) < MAX_GAP && nb_writers == 1) { // We are writing in sequence of the previous write
-      if (flags || IS_SOFTMODEM_RFSIM) {
-        if (nrue_ru_write)
-          wroteSamples = nrue_ru_write(UE, timestamp, txp, nsamps, nbAnt, flags);
-        else
-          wroteSamples = device->trx_write_func(device, timestamp, txp, nsamps, nbAnt, flags);
-        if (wroteSamples != nsamps)
-          LOG_W(HW, "Failed to write to RF: wrote %d out of %d samples\n", wroteSamples, nsamps);
-      } else
-        wroteSamples = nsamps;
-      ctx->nextTS = timestamp + nsamps;
-
-    } else {
-      writerEnqueue(ctx, timestamp, txp, nsamps, nb_writers, nbAnt, flags);
-    }
-    writerProcessWaitingQueue(nrue_ru_write, UE, device);
-    pthread_mutex_unlock(&ctx->mutex_write);
-    return wroteSamples ? wroteSamples : nsamps;
-  }
-  writerEnqueue(ctx, timestamp, txp, nsamps, nb_writers, nbAnt, flags);
-  if (pthread_mutex_trylock(&ctx->mutex_write) == 0) {
-    writerProcessWaitingQueue(nrue_ru_write, UE, device);
-    pthread_mutex_unlock(&ctx->mutex_write);
-  }
   return nsamps;
 }
 
@@ -337,10 +264,8 @@ void openair0_write_reorder_clear_context(openair0_device_t *device)
   else
     pthread_mutex_unlock(&ctx->mutex_write);
   pthread_mutex_lock(&ctx->mutex_store);
-  for (int i = 0; i < WRITE_QUEUE_SZ; i++) {
-    ctx->queue[i].active = false;
-    free(ctx->queue[i].txp);
-  }
   ctx->initDone = false;
+  free(ctx->ts_per_writer);
+  ctx->ts_per_writer = NULL; // avoid double free when multi-ues calls it
   pthread_mutex_unlock(&ctx->mutex_store);
 }
