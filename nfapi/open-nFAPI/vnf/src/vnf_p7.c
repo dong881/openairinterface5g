@@ -14,7 +14,6 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <limits.h>
 #include <assert.h>
 #ifdef ENABLE_AERIAL
@@ -55,9 +54,6 @@ int vnf_nr_extract_timing_info(const nfapi_nr_timing_info_t *ind,
 	int32_t slots_per_frame = 10 << p7_info->mu;
 	int64_t frame_duration_us = (int64_t)slots_per_frame * (int64_t)slot_duration_us;
 	int64_t timing_window_us = (int64_t)config->timing_window;
-	if (timing_window_us < 0) {
-		timing_window_us = 0;
-	}
 	int64_t valid_span_us = timing_window_us + frame_duration_us;
 	if (valid_span_us <= 0) {
 		valid_span_us = frame_duration_us;
@@ -167,9 +163,9 @@ int vnf_nr_extract_timing_info(const nfapi_nr_timing_info_t *ind,
 	return 1;
 }
 
-static int32_t global_ewma_alpha_denom = 8;    // 1/8 default
-static int32_t global_ewma_beta_attack_denom = 4;     // 1/4 default (fast attack)
-static int32_t global_ewma_beta_release_denom = 2048;  // 1/2048 default (slow release)
+static const int32_t global_ewma_alpha_denom = 8;    // 1/8 default
+static const int32_t global_ewma_beta_attack_denom = 4;     // 1/4 default (fast attack)
+static const int32_t global_ewma_beta_release_denom = 2048;  // 1/2048 default (slow release)
 
 /*
  * Calculate the number of slots between two (SFN, slot) pairs.
@@ -2491,4 +2487,3 @@ void vnf_p7_release_pdu(vnf_p7_t* vnf_p7, void* pdu)
 {
 	vnf_p7_free(vnf_p7, pdu);
 }
-

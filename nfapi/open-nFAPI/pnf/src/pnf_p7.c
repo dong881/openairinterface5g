@@ -29,6 +29,14 @@ extern int sf_ahead;
 // Used by the RFC3550 jitter calculation (defined later in this file)
 static inline int64_t timehr_diff_us(uint32_t time_hr_a, uint32_t time_hr_b);
 
+typedef enum {
+	NFAPI_JITTER_DL_TTI = 0,
+	NFAPI_JITTER_UL_TTI,
+	NFAPI_JITTER_UL_DCI,
+	NFAPI_JITTER_TX_DATA,
+	NFAPI_JITTER_MAX
+} nfapi_jitter_msg_type_t;
+
 static void add_slot(int mu, uint16_t *frameP, uint16_t *slotP, int offset)
 {
 	uint16_t num_slots = NFAPI_SLOTNUM(mu);
@@ -131,11 +139,10 @@ static inline int64_t p7_tx_ts_diff_us(uint32_t curr_tx_ts_us, uint32_t prev_tx_
 
 	return diff;
 }
-// Update jitter for a specific message type using RFC 3550 algorithm
-void pnf_update_jitter(pnf_p7_t* pnf_p7,
-                       nfapi_jitter_msg_type_t msg_type,
-                       uint32_t p7_tx_timestamp,
-                       uint32_t recv_time_hr)
+static void pnf_update_jitter(pnf_p7_t* pnf_p7,
+                              nfapi_jitter_msg_type_t msg_type,
+                              uint32_t p7_tx_timestamp,
+                              uint32_t recv_time_hr)
 {
 	if (!pnf_p7) return;
 
@@ -208,8 +215,7 @@ void pnf_update_jitter(pnf_p7_t* pnf_p7,
 	*jitter_us += ((double)d - *jitter_us) / 16.0;
 }
 
-// Get jitter value as uint32_t for Timing Info message
-uint32_t pnf_get_jitter(pnf_p7_t* pnf_p7, nfapi_jitter_msg_type_t msg_type)
+static uint32_t pnf_get_jitter(pnf_p7_t* pnf_p7, nfapi_jitter_msg_type_t msg_type)
 {
 	if (!pnf_p7) return 0;
 
@@ -647,8 +653,6 @@ static bool check_nr_p7_timing(pnf_p7_t *pnf_p7, uint16_t msg_sfn, uint16_t msg_
 
     if (pnf_p7->_public.timing_info_mode_aperiodic) {
       pnf_p7->timing_info_aperiodic_send = 1;
-      pnf_p7->timing_info_trigger_sfn = msg_sfn;
-      pnf_p7->timing_info_trigger_slot = msg_slot;
     }
     return false;
   }
