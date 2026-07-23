@@ -73,7 +73,7 @@ int trx_oran_start(openair0_device_t *device)
 
   for (int32_t cc_id = 0; cc_id < s->nCC; cc_id++) {
     for (int32_t port_id = 0; port_id < s->num_ports; port_id++) {
-      if (xran_activate_cc(port_id, cc_id) != 0) {
+      if (xran_activate_cc(((void **)s->oran_priv)[port_id], cc_id) != 0) {
         printf("%s:%d:%s: Activate CC failed ... Exit\n", __FILE__, __LINE__, __FUNCTION__);
         exit(1);
       } else {
@@ -102,7 +102,7 @@ int trx_oran_stop(openair0_device_t *device)
 
   for (int32_t cc_id = 0; cc_id < s->nCC; cc_id++) {
     for (int32_t port_id = 0; port_id < s->num_ports; port_id++) {
-      xran_deactivate_cc(port_id, cc_id);
+      xran_deactivate_cc(((void **)s->oran_priv)[port_id], cc_id);
     }
   }
 
